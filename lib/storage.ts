@@ -1,12 +1,12 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { CaseRecord } from './types';
+import { getCasesFilePath } from './paths';
 
-const baseDir = path.join(process.cwd(), '.data');
-const casesFile = path.join(baseDir, 'cases.json');
+const casesFile = getCasesFilePath();
 
 async function ensure() {
-  await fs.mkdir(baseDir, { recursive: true });
+  await fs.mkdir(path.dirname(casesFile), { recursive: true });
   try {
     await fs.access(casesFile);
   } catch {

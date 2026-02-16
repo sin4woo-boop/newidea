@@ -47,6 +47,7 @@ npm run dev
 - Vercel 프로덕션 확장 권장:
   - DB: Supabase/Postgres
   - 이미지: Supabase Storage 또는 S3 호환 스토리지
+  - 참고: 현재 코드 기준 Vercel에서는 로컬 파일이 `/tmp`에 임시 저장되며 영구 보관되지 않습니다.
 
 ## 테스트 방법
 
