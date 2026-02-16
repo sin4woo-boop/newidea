@@ -4,4 +4,6 @@ out
 .env*
 !.env.example
 .data
+secrets/
 npm-debug.log*
+tsconfig.tsbuildinfo

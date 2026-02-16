@@ -9,6 +9,21 @@ import { getChecklist } from '@/lib/checklists';
 
 const maxFileMB = 8;
 
+function createCaseId() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+  return `case-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
 async function analyzeImage(file: File): Promise<QualityResult> {
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement('canvas');
@@ -122,7 +137,7 @@ export default function NewCasePage() {
       setBlocks(ocrJson.blocks ?? []);
 
       const risk = scoreRisk({ quality, ocrText: ocrJson.text ?? '' });
-      const id = crypto.randomUUID();
+      const id = createCaseId();
       const payload = {
         id,
         createdAt: new Date().toISOString(),
