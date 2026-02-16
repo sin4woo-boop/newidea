@@ -4,7 +4,10 @@ const nextConfig = {
     typedRoutes: true
   },
   images: {
-    remotePatterns: [{ protocol: 'https', hostname: '**.supabase.co' }]
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: '**.googleusercontent.com' }
+    ]
   }
 };
 

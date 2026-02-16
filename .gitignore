@@ -7,3 +7,5 @@ out
 secrets/
 npm-debug.log*
 tsconfig.tsbuildinfo
+prisma/dev.db
+prisma/dev.db-journal

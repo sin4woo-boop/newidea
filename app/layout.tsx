@@ -5,8 +5,8 @@ import { FooterDisclaimer } from '@/components/footer';
 import { SWRegister } from '@/components/sw-register';
 
 export const metadata: Metadata = {
-  title: '고미술 리스크 스크리닝',
-  description: '고미술 진위/위작 리스크 스크리닝 PWA',
+  title: 'HERITAI',
+  description: 'Heritage Risk Intelligence Platform for galleries',
   manifest: '/manifest.webmanifest'
 };
 

@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
+import { auth } from '@/auth';
 import { runVisionOCR } from '@/lib/googleVision';
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get('file');

@@ -1,30 +1,15 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import { auth } from '@/auth';
 import { Badge, Button, Card } from '@/components/ui';
-import { listCases } from '@/lib/storage';
+import { BrandMark } from '@/components/brand';
+import { listCasesByUser } from '@/lib/storage';
 import { CaseRecord } from '@/lib/types';
 
 function formatDelta(current: number, previous: number) {
-  if (previous === 0) {
-    if (current === 0) return { text: '변동 없음', positive: true };
-    return { text: `+${current.toFixed(1)}%`, positive: true };
-  }
+  if (previous === 0) return { text: '변동 없음', positive: true };
   const delta = ((current - previous) / Math.abs(previous)) * 100;
-  const sign = delta >= 0 ? '+' : '';
-  return { text: `${sign}${delta.toFixed(1)}%`, positive: delta >= 0 };
-}
-
-function startOfMonth(base: Date) {
-  return new Date(base.getFullYear(), base.getMonth(), 1);
-}
-
-function startOfPreviousMonth(base: Date) {
-  return new Date(base.getFullYear(), base.getMonth() - 1, 1);
-}
-
-function asDate(value: string) {
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return { text: `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`, positive: delta >= 0 };
 }
 
 function riskLevelByScore(score: number) {
@@ -42,99 +27,100 @@ function riskBadgeClass(score: number) {
 
 function riskDistribution(cases: CaseRecord[]) {
   const counts = { low: 0, medium: 0, high: 0 };
-  for (const item of cases) {
-    const level = riskLevelByScore(item.riskScore);
-    counts[level] += 1;
-  }
+  for (const item of cases) counts[riskLevelByScore(item.riskScore)] += 1;
   return counts;
 }
 
 function pct(n: number, total: number) {
-  if (total === 0) return 0;
-  return Math.round((n / total) * 100);
+  return total === 0 ? 0 : Math.round((n / total) * 100);
+}
+
+function monthBoundary(base: Date) {
+  const start = new Date(base.getFullYear(), base.getMonth(), 1);
+  const prev = new Date(base.getFullYear(), base.getMonth() - 1, 1);
+  return { start, prev };
 }
 
 export default async function HomePage() {
-  const items = await listCases();
-  const now = new Date();
-  const thisMonthStart = startOfMonth(now);
-  const previousMonthStart = startOfPreviousMonth(now);
+  const session = await auth();
+  const userId = session?.user?.id;
+  const items = userId ? await listCasesByUser(userId) : [];
 
-  const thisMonthCases = items.filter((item) => {
-    const d = asDate(item.createdAt);
-    return d ? d >= thisMonthStart : false;
-  });
+  const { start, prev } = monthBoundary(new Date());
+  const thisMonthCases = items.filter((item) => new Date(item.createdAt) >= start);
   const previousMonthCases = items.filter((item) => {
-    const d = asDate(item.createdAt);
-    return d ? d >= previousMonthStart && d < thisMonthStart : false;
+    const d = new Date(item.createdAt);
+    return d >= prev && d < start;
   });
 
   const totalScreened = items.length;
-  const avgRisk = totalScreened > 0 ? items.reduce((sum, item) => sum + item.riskScore, 0) / totalScreened : 0;
-  const highRiskCount = items.filter((item) => item.riskScore >= 70).length;
-  const highRiskRatio = totalScreened > 0 ? (highRiskCount / totalScreened) * 100 : 0;
+  const avgRisk = totalScreened ? items.reduce((sum, item) => sum + item.riskScore, 0) / totalScreened : 0;
+  const highRiskRatio = totalScreened ? (items.filter((item) => item.riskScore >= 70).length / totalScreened) * 100 : 0;
   const monthAnalyses = thisMonthCases.length;
 
-  const prevAvgRisk =
-    previousMonthCases.length > 0
-      ? previousMonthCases.reduce((sum, item) => sum + item.riskScore, 0) / previousMonthCases.length
-      : 0;
-  const prevHighRatio =
-    previousMonthCases.length > 0
-      ? (previousMonthCases.filter((item) => item.riskScore >= 70).length / previousMonthCases.length) *
-        100
-      : 0;
-
-  const totalDelta = formatDelta(thisMonthCases.length, previousMonthCases.length);
-  const avgDelta = formatDelta(avgRisk, prevAvgRisk);
-  const highDelta = formatDelta(highRiskRatio, prevHighRatio);
-  const monthDelta = formatDelta(thisMonthCases.length, previousMonthCases.length);
-
-  const dist = riskDistribution(items);
-  const recent = items.slice(0, 5);
+  const prevAvgRisk = previousMonthCases.length
+    ? previousMonthCases.reduce((sum, item) => sum + item.riskScore, 0) / previousMonthCases.length
+    : 0;
+  const prevHighRiskRatio = previousMonthCases.length
+    ? (previousMonthCases.filter((item) => item.riskScore >= 70).length / previousMonthCases.length) * 100
+    : 0;
 
   const kpis = [
     {
       title: '누적 분석 작품',
       value: totalScreened.toLocaleString('ko-KR'),
       sub: '분석된 전체 작품 수',
-      delta: totalDelta
+      delta: formatDelta(thisMonthCases.length, previousMonthCases.length)
     },
     {
       title: '평균 리스크 점수',
       value: avgRisk.toFixed(1),
       sub: '전체 작품의 평균 점수',
-      delta: avgDelta
+      delta: formatDelta(avgRisk, prevAvgRisk)
     },
     {
       title: '고위험 비율',
       value: `${highRiskRatio.toFixed(1)}%`,
       sub: '70점 이상 비중',
-      delta: highDelta
+      delta: formatDelta(highRiskRatio, prevHighRiskRatio)
     },
     {
       title: '이번 달 분석 건수',
       value: monthAnalyses.toLocaleString('ko-KR'),
       sub: '이번 달 신규 접수',
-      delta: monthDelta
+      delta: formatDelta(thisMonthCases.length, previousMonthCases.length)
     }
   ];
 
+  const dist = riskDistribution(items);
+  const recent = items.slice(0, 5);
+
   return (
     <div className="space-y-8 pb-6">
-      <header className="space-y-3 pt-3 text-center">
+      <header className="space-y-3 pt-2 text-center">
         <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Risk Intelligence Dashboard</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">Art Risk Intelligence</h1>
-        <p className="text-sm text-neutral-500">갤러리를 위한 AI 기반 작품 리스크 스크리닝 플랫폼</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">
+          <BrandMark className="text-3xl" />
+        </h1>
+        <p className="text-sm text-neutral-500">Heritage Risk Intelligence Platform</p>
       </header>
+
+      {!session?.user && (
+        <Card className="border-[#E9E1D3] bg-white p-6 text-center">
+          <p className="mb-3 text-sm text-neutral-600">대시보드를 보려면 Google 로그인이 필요합니다.</p>
+          <Link href="/login">
+            <Button className="h-[52px] rounded-xl bg-[#B89A5D] px-6 text-white hover:bg-[#A88442]">
+              Google로 로그인
+            </Button>
+          </Link>
+        </Card>
+      )}
 
       <section className="grid grid-cols-2 gap-3">
         {kpis.map((kpi) => (
-          <Card key={kpi.title} className="relative space-y-2 border border-[#E9E1D3] bg-white p-4 shadow-none">
+          <Card key={kpi.title} className="relative space-y-2 border-[#E9E1D3] bg-white p-4">
             <div className="absolute left-0 right-0 top-0 h-[2px] rounded-t-xl bg-[#B89A5D]" />
-            <p className="whitespace-nowrap pt-1 text-[11px] font-medium tracking-wide text-neutral-500">
-              {kpi.title}
-            </p>
+            <p className="whitespace-nowrap pt-1 text-[11px] tracking-wide text-neutral-500">{kpi.title}</p>
             <p className="text-3xl font-semibold tabular-nums text-neutral-900">{kpi.value}</p>
             <p className="text-xs text-neutral-500">{kpi.sub}</p>
             <Badge className={kpi.delta.positive ? 'bg-[#E8F0EA] text-[#4F6B59]' : 'bg-[#F3E3E3] text-[#8B4D4B]'}>
@@ -144,7 +130,7 @@ export default async function HomePage() {
         ))}
       </section>
 
-      <Card className="space-y-4 border border-[#E9E1D3] bg-white p-5 shadow-none">
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5">
         <div>
           <h2 className="text-lg font-semibold text-neutral-900">리스크 분포</h2>
           <p className="text-xs text-neutral-500">현재 분석 작품의 리스크 수준 분포</p>
@@ -173,7 +159,7 @@ export default async function HomePage() {
         </div>
       </Card>
 
-      <Card className="space-y-3 border border-[#E9E1D3] bg-white p-5 shadow-none">
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5">
         <div className="flex items-end justify-between">
           <h2 className="text-lg font-semibold text-neutral-900">최근 분석 케이스</h2>
           <Link href="/cases" className="text-xs text-neutral-500 hover:text-neutral-900">
@@ -181,7 +167,7 @@ export default async function HomePage() {
           </Link>
         </div>
         {recent.length === 0 && (
-          <p className="text-sm text-neutral-500">아직 분석 기록이 없습니다. 신규 스크리닝을 시작해 주세요.</p>
+          <p className="text-sm text-neutral-500">아직 분석 기록이 없습니다. 신규 분석을 시작해 주세요.</p>
         )}
         <div className="space-y-2">
           {recent.map((item) => (
@@ -218,7 +204,7 @@ export default async function HomePage() {
         </div>
       </Card>
 
-      <Link href="/new" className="block">
+      <Link href={session?.user ? '/new' : '/login'} className="block">
         <Button className="h-[52px] w-full justify-center rounded-xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">
           + 신규 작품 스크리닝
         </Button>

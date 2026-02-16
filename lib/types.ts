@@ -23,6 +23,7 @@ export type OCRBlock = {
 
 export type CaseRecord = {
   id: string;
+  userId: string;
   createdAt: string;
   category: Category;
   imageUrl?: string;
@@ -34,4 +35,8 @@ export type CaseRecord = {
   riskReasons: string[];
   notes?: string;
   tags: string[];
+};
+
+export type CaseCreateInput = Omit<CaseRecord, 'userId'> & {
+  userId?: string;
 };

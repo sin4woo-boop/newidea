@@ -2,13 +2,13 @@ import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Antique Risk Screen',
-    short_name: 'RiskScreen',
-    description: '고미술 리스크 스크리닝 PWA',
+    name: 'HERITAI',
+    short_name: 'HERITAI',
+    description: 'Heritage Risk Intelligence Platform for galleries',
     start_url: '/',
     display: 'standalone',
-    background_color: '#f8fafc',
-    theme_color: '#1f2a44',
+    background_color: '#F7F4EE',
+    theme_color: '#B89A5D',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }

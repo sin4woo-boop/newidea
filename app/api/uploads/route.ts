@@ -1,11 +1,17 @@
 import { promises as fs } from 'fs';
+import path from 'path';
 import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
-import path from 'path';
+import { auth } from '@/auth';
 import { getUploadsDirPath } from '@/lib/paths';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: '로그인이 필요합니다.' }, { status: 401 });
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get('file');
