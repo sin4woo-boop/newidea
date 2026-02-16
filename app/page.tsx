@@ -4,10 +4,10 @@ import { Badge, Button, Card } from '@/components/ui';
 import { listCases } from '@/lib/storage';
 import { CaseRecord } from '@/lib/types';
 
-function formatDelta(current: number, previous: number, suffix = '') {
+function formatDelta(current: number, previous: number) {
   if (previous === 0) {
-    if (current === 0) return { text: 'No change', positive: true };
-    return { text: `+${current.toFixed(1)}${suffix}`, positive: true };
+    if (current === 0) return { text: '변동 없음', positive: true };
+    return { text: `+${current.toFixed(1)}%`, positive: true };
   }
   const delta = ((current - previous) / Math.abs(previous)) * 100;
   const sign = delta >= 0 ? '+' : '';
@@ -70,8 +70,7 @@ export default async function HomePage() {
   });
 
   const totalScreened = items.length;
-  const avgRisk =
-    items.length > 0 ? items.reduce((sum, item) => sum + item.riskScore, 0) / items.length : 0;
+  const avgRisk = totalScreened > 0 ? items.reduce((sum, item) => sum + item.riskScore, 0) / totalScreened : 0;
   const highRiskCount = items.filter((item) => item.riskScore >= 70).length;
   const highRiskRatio = totalScreened > 0 ? (highRiskCount / totalScreened) * 100 : 0;
   const monthAnalyses = thisMonthCases.length;
@@ -96,64 +95,66 @@ export default async function HomePage() {
 
   const kpis = [
     {
-      title: 'Total Screened Works',
-      value: totalScreened.toLocaleString('en-US'),
-      sub: 'All-time processed artworks',
+      title: '누적 분석 작품',
+      value: totalScreened.toLocaleString('ko-KR'),
+      sub: '지금까지 분석된 전체 작품 수',
       delta: totalDelta
     },
     {
-      title: 'Average Risk Score',
+      title: '평균 리스크 점수',
       value: avgRisk.toFixed(1),
-      sub: 'Across all screened works',
+      sub: '전체 작품의 평균 점수',
       delta: avgDelta
     },
     {
-      title: 'High Risk Ratio',
+      title: '고위험 비율',
       value: `${highRiskRatio.toFixed(1)}%`,
-      sub: 'Works with risk score >= 70',
+      sub: '70점 이상 고위험 비중',
       delta: highDelta
     },
     {
-      title: 'This Month Analyses',
-      value: monthAnalyses.toLocaleString('en-US'),
-      sub: 'Screenings created this month',
+      title: '이번 달 분석 건수',
+      value: monthAnalyses.toLocaleString('ko-KR'),
+      sub: '이번 달 신규 분석 접수',
       delta: monthDelta
     }
   ];
 
   return (
     <div className="space-y-6 pb-4">
-      <Card className="space-y-3 border-border/70 shadow-none">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Risk Intelligence Dashboard</p>
+      <Card className="space-y-3 border-border/70 p-5 shadow-none">
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">리스크 인텔리전스 대시보드</p>
         <h1 className="text-3xl font-semibold tracking-tight text-foreground">Art Risk Intelligence</h1>
         <p className="max-w-lg text-sm text-muted-foreground">
-          AI-powered artwork risk screening platform for galleries
+          갤러리를 위한 AI 기반 작품 리스크 스크리닝 플랫폼
         </p>
       </Card>
 
       <section className="grid grid-cols-2 gap-3">
         {kpis.map((kpi) => (
           <Card key={kpi.title} className="space-y-2 border-border/70 p-4 shadow-none">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{kpi.title}</p>
+            <p className="whitespace-nowrap text-[11px] font-medium tracking-wide text-muted-foreground">
+              {kpi.title}
+            </p>
             <p className="text-2xl font-semibold tabular-nums">{kpi.value}</p>
             <p className="text-xs text-muted-foreground">{kpi.sub}</p>
             <Badge className={kpi.delta.positive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
-              {kpi.delta.text} vs last month
+              {kpi.delta.text} 전월 대비
             </Badge>
           </Card>
         ))}
       </section>
 
-      <Card className="space-y-4 border-border/70 shadow-none">
+      <Card className="space-y-4 border-border/70 p-5 shadow-none">
         <div>
-          <h2 className="text-lg font-semibold">Risk Distribution</h2>
-          <p className="text-xs text-muted-foreground">Current distribution of screened works by risk level</p>
+          <h2 className="text-lg font-semibold">리스크 분포</h2>
+          <p className="text-xs text-muted-foreground">현재 분석 작품의 리스크 수준 분포</p>
         </div>
         <div className="space-y-3">
           {[
-            { label: 'Low', value: dist.low, color: 'bg-emerald-500' },
-            { label: 'Medium', value: dist.medium, color: 'bg-amber-500' },
-            { label: 'High', value: dist.high, color: 'bg-red-500' }
+            { label: '낮음', value: dist.low, color: 'bg-emerald-500' },
+            { label: '중간', value: dist.medium, color: 'bg-amber-500' },
+            { label: '높음', value: dist.high, color: 'bg-red-500' }
           ].map((row) => {
             const width = pct(row.value, totalScreened);
             return (
@@ -161,7 +162,7 @@ export default async function HomePage() {
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium text-foreground">{row.label}</span>
                   <span className="tabular-nums text-muted-foreground">
-                    {row.value} ({width}%)
+                    {row.value}건 ({width}%)
                   </span>
                 </div>
                 <div className="h-2 w-full rounded-full bg-muted">
@@ -173,15 +174,15 @@ export default async function HomePage() {
         </div>
       </Card>
 
-      <Card className="space-y-3 border-border/70 shadow-none">
+      <Card className="space-y-3 border-border/70 p-5 shadow-none">
         <div className="flex items-end justify-between">
-          <h2 className="text-lg font-semibold">Recent Cases</h2>
+          <h2 className="text-lg font-semibold">최근 분석 케이스</h2>
           <Link href="/cases" className="text-xs text-muted-foreground hover:text-foreground">
-            View all
+            전체 보기
           </Link>
         </div>
         {recent.length === 0 && (
-          <p className="text-sm text-muted-foreground">No cases yet. Start a new artwork screening.</p>
+          <p className="text-sm text-muted-foreground">아직 분석 기록이 없습니다. 신규 스크리닝을 시작해 주세요.</p>
         )}
         <div className="space-y-2">
           {recent.map((item) => (
@@ -192,20 +193,20 @@ export default async function HomePage() {
             >
               <div className="relative h-14 w-14 overflow-hidden rounded-md bg-muted">
                 {item.imageUrl ? (
-                  <Image src={item.imageUrl} alt="case thumbnail" fill className="object-cover" unoptimized />
+                  <Image src={item.imageUrl} alt="케이스 썸네일" fill className="object-cover" unoptimized />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
-                    No Image
+                    이미지 없음
                   </div>
                 )}
               </div>
               <div className="min-w-0 flex-1 space-y-1">
                 <p className="truncate text-sm font-medium">{item.category}</p>
                 <p className="text-xs text-muted-foreground">
-                  {new Date(item.createdAt).toLocaleString('en-US', {
+                  {new Date(item.createdAt).toLocaleDateString('ko-KR', {
                     year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
+                    month: '2-digit',
+                    day: '2-digit'
                   })}
                 </p>
               </div>
@@ -220,7 +221,7 @@ export default async function HomePage() {
 
       <Link href="/new" className="block">
         <Button className="h-12 w-full justify-center rounded-lg text-base font-semibold">
-          + New Artwork Screening
+          + 신규 작품 스크리닝
         </Button>
       </Link>
     </div>

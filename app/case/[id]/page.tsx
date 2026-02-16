@@ -39,7 +39,7 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
       </Card>
 
       <Card className="space-y-2">
-        <p className="text-xs text-muted-foreground">{DISCLAIMER}</p>
+        <p className="whitespace-pre-line text-xs text-muted-foreground">{DISCLAIMER}</p>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer">
           <Button className="w-full">서울옥션 위탁 상담 연결</Button>
         </a>

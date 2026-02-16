@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Button, Card, Badge } from '@/components/ui';
@@ -92,6 +92,8 @@ async function analyzeImage(file: File): Promise<QualityResult> {
 
 export default function NewCasePage() {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>('');
   const [quality, setQuality] = useState<QualityResult | null>(null);
@@ -175,7 +177,29 @@ export default function NewCasePage() {
             <option key={item}>{item}</option>
           ))}
         </select>
-        <input type="file" accept="image/*" capture="environment" onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} type="button">
+            파일 선택
+          </Button>
+          <Button onClick={() => cameraInputRef.current?.click()} type="button">
+            카메라 촬영
+          </Button>
+        </div>
         {preview && (
           <div className="overflow-hidden rounded-md border">
             <Image src={preview} alt="preview" width={1200} height={800} className="h-auto w-full" unoptimized />
