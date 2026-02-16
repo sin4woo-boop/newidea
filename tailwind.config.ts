@@ -10,22 +10,22 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(220 14% 90%)',
-        input: 'hsl(220 14% 90%)',
-        ring: 'hsl(220 14% 40%)',
-        background: 'hsl(220 20% 99%)',
-        foreground: 'hsl(220 20% 12%)',
+        border: '#E9E1D3',
+        input: '#E9E1D3',
+        ring: '#B89A5D',
+        background: '#F7F4EE',
+        foreground: '#171717',
         primary: {
-          DEFAULT: 'hsl(220 36% 20%)',
-          foreground: 'hsl(0 0% 100%)'
+          DEFAULT: '#B89A5D',
+          foreground: '#ffffff'
         },
         muted: {
-          DEFAULT: 'hsl(220 16% 94%)',
-          foreground: 'hsl(220 10% 40%)'
+          DEFAULT: '#F1ECE3',
+          foreground: '#737373'
         },
         card: {
-          DEFAULT: 'hsl(0 0% 100%)',
-          foreground: 'hsl(220 20% 12%)'
+          DEFAULT: '#ffffff',
+          foreground: '#171717'
         }
       },
       borderRadius: {

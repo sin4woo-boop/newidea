@@ -35,9 +35,9 @@ function riskLevelByScore(score: number) {
 
 function riskBadgeClass(score: number) {
   const level = riskLevelByScore(score);
-  if (level === 'high') return 'bg-red-100 text-red-700';
-  if (level === 'medium') return 'bg-amber-100 text-amber-700';
-  return 'bg-emerald-100 text-emerald-700';
+  if (level === 'high') return 'bg-[#E9D6D5] text-[#7D3F3B]';
+  if (level === 'medium') return 'bg-[#F3E8CF] text-[#8A6A33]';
+  return 'bg-[#DDE8DF] text-[#486653]';
 }
 
 function riskDistribution(cases: CaseRecord[]) {
@@ -97,7 +97,7 @@ export default async function HomePage() {
     {
       title: '누적 분석 작품',
       value: totalScreened.toLocaleString('ko-KR'),
-      sub: '지금까지 분석된 전체 작품 수',
+      sub: '분석된 전체 작품 수',
       delta: totalDelta
     },
     {
@@ -109,64 +109,63 @@ export default async function HomePage() {
     {
       title: '고위험 비율',
       value: `${highRiskRatio.toFixed(1)}%`,
-      sub: '70점 이상 고위험 비중',
+      sub: '70점 이상 비중',
       delta: highDelta
     },
     {
       title: '이번 달 분석 건수',
       value: monthAnalyses.toLocaleString('ko-KR'),
-      sub: '이번 달 신규 분석 접수',
+      sub: '이번 달 신규 접수',
       delta: monthDelta
     }
   ];
 
   return (
-    <div className="space-y-6 pb-4">
-      <Card className="space-y-3 border-border/70 p-5 shadow-none">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">리스크 인텔리전스 대시보드</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Art Risk Intelligence</h1>
-        <p className="max-w-lg text-sm text-muted-foreground">
-          갤러리를 위한 AI 기반 작품 리스크 스크리닝 플랫폼
-        </p>
-      </Card>
+    <div className="space-y-8 pb-6">
+      <header className="space-y-3 pt-3 text-center">
+        <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Risk Intelligence Dashboard</p>
+        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900">Art Risk Intelligence</h1>
+        <p className="text-sm text-neutral-500">갤러리를 위한 AI 기반 작품 리스크 스크리닝 플랫폼</p>
+      </header>
 
       <section className="grid grid-cols-2 gap-3">
         {kpis.map((kpi) => (
-          <Card key={kpi.title} className="space-y-2 border-border/70 p-4 shadow-none">
-            <p className="whitespace-nowrap text-[11px] font-medium tracking-wide text-muted-foreground">
+          <Card key={kpi.title} className="relative space-y-2 border border-[#E9E1D3] bg-white p-4 shadow-none">
+            <div className="absolute left-0 right-0 top-0 h-[2px] rounded-t-xl bg-[#B89A5D]" />
+            <p className="whitespace-nowrap pt-1 text-[11px] font-medium tracking-wide text-neutral-500">
               {kpi.title}
             </p>
-            <p className="text-2xl font-semibold tabular-nums">{kpi.value}</p>
-            <p className="text-xs text-muted-foreground">{kpi.sub}</p>
-            <Badge className={kpi.delta.positive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>
+            <p className="text-3xl font-semibold tabular-nums text-neutral-900">{kpi.value}</p>
+            <p className="text-xs text-neutral-500">{kpi.sub}</p>
+            <Badge className={kpi.delta.positive ? 'bg-[#E8F0EA] text-[#4F6B59]' : 'bg-[#F3E3E3] text-[#8B4D4B]'}>
               {kpi.delta.text} 전월 대비
             </Badge>
           </Card>
         ))}
       </section>
 
-      <Card className="space-y-4 border-border/70 p-5 shadow-none">
+      <Card className="space-y-4 border border-[#E9E1D3] bg-white p-5 shadow-none">
         <div>
-          <h2 className="text-lg font-semibold">리스크 분포</h2>
-          <p className="text-xs text-muted-foreground">현재 분석 작품의 리스크 수준 분포</p>
+          <h2 className="text-lg font-semibold text-neutral-900">리스크 분포</h2>
+          <p className="text-xs text-neutral-500">현재 분석 작품의 리스크 수준 분포</p>
         </div>
         <div className="space-y-3">
           {[
-            { label: '낮음', value: dist.low, color: 'bg-emerald-500' },
-            { label: '중간', value: dist.medium, color: 'bg-amber-500' },
-            { label: '높음', value: dist.high, color: 'bg-red-500' }
+            { label: '낮음', value: dist.low, color: 'bg-[#6E8F78]' },
+            { label: '중간', value: dist.medium, color: 'bg-[#B89A5D]' },
+            { label: '높음', value: dist.high, color: 'bg-[#8B4D4B]' }
           ].map((row) => {
             const width = pct(row.value, totalScreened);
             return (
               <div key={row.label} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-foreground">{row.label}</span>
-                  <span className="tabular-nums text-muted-foreground">
+                  <span className="font-medium text-neutral-900">{row.label}</span>
+                  <span className="tabular-nums text-neutral-500">
                     {row.value}건 ({width}%)
                   </span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-muted">
-                  <div className={`h-2 rounded-full ${row.color}`} style={{ width: `${width}%` }} />
+                <div className="h-1.5 w-full rounded-full bg-[#EDE6D7]">
+                  <div className={`h-1.5 rounded-full ${row.color}`} style={{ width: `${width}%` }} />
                 </div>
               </div>
             );
@@ -174,35 +173,35 @@ export default async function HomePage() {
         </div>
       </Card>
 
-      <Card className="space-y-3 border-border/70 p-5 shadow-none">
+      <Card className="space-y-3 border border-[#E9E1D3] bg-white p-5 shadow-none">
         <div className="flex items-end justify-between">
-          <h2 className="text-lg font-semibold">최근 분석 케이스</h2>
-          <Link href="/cases" className="text-xs text-muted-foreground hover:text-foreground">
+          <h2 className="text-lg font-semibold text-neutral-900">최근 분석 케이스</h2>
+          <Link href="/cases" className="text-xs text-neutral-500 hover:text-neutral-900">
             전체 보기
           </Link>
         </div>
         {recent.length === 0 && (
-          <p className="text-sm text-muted-foreground">아직 분석 기록이 없습니다. 신규 스크리닝을 시작해 주세요.</p>
+          <p className="text-sm text-neutral-500">아직 분석 기록이 없습니다. 신규 스크리닝을 시작해 주세요.</p>
         )}
         <div className="space-y-2">
           {recent.map((item) => (
             <Link
               key={item.id}
               href={`/case/${item.id}`}
-              className="flex items-center gap-3 rounded-lg border border-border/70 bg-white p-2 transition hover:bg-muted/50"
+              className="flex items-center gap-3 rounded-xl border border-[#ECE5D9] bg-white p-2 transition hover:border-[#DCCBA5]"
             >
-              <div className="relative h-14 w-14 overflow-hidden rounded-md bg-muted">
+              <div className="relative h-14 w-14 overflow-hidden rounded-lg bg-[#F1ECE3]">
                 {item.imageUrl ? (
                   <Image src={item.imageUrl} alt="케이스 썸네일" fill className="object-cover" unoptimized />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] text-muted-foreground">
+                  <div className="flex h-full w-full items-center justify-center text-[10px] text-neutral-500">
                     이미지 없음
                   </div>
                 )}
               </div>
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="truncate text-sm font-medium">{item.category}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="truncate text-sm font-medium text-neutral-900">{item.category}</p>
+                <p className="text-xs text-neutral-500">
                   {new Date(item.createdAt).toLocaleDateString('ko-KR', {
                     year: 'numeric',
                     month: '2-digit',
@@ -211,7 +210,7 @@ export default async function HomePage() {
                 </p>
               </div>
               <div className="space-y-1 text-right">
-                <p className="text-sm font-semibold tabular-nums">{item.riskScore}</p>
+                <p className="text-sm font-semibold tabular-nums text-neutral-900">{item.riskScore}</p>
                 <Badge className={riskBadgeClass(item.riskScore)}>{item.riskLevel}</Badge>
               </div>
             </Link>
@@ -220,7 +219,7 @@ export default async function HomePage() {
       </Card>
 
       <Link href="/new" className="block">
-        <Button className="h-12 w-full justify-center rounded-lg text-base font-semibold">
+        <Button className="h-[52px] w-full justify-center rounded-xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">
           + 신규 작품 스크리닝
         </Button>
       </Link>

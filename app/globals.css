@@ -8,6 +8,7 @@
 
 body {
   @apply bg-background text-foreground antialiased;
+  background-color: #f7f4ee;
   min-height: 100dvh;
 }
 
@@ -18,4 +19,9 @@ body {
 
 .safe-pb {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+
+.korean-keep {
+  white-space: pre-line;
+  word-break: keep-all;
 }
