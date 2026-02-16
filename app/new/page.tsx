@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { Button, Card, Badge } from '@/components/ui';
 import { Category, QualityResult } from '@/lib/types';
 import { scoreRisk } from '@/lib/risk';
@@ -175,7 +176,11 @@ export default function NewCasePage() {
           ))}
         </select>
         <input type="file" accept="image/*" capture="environment" onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])} />
-        {preview && <img src={preview} alt="preview" className="w-full rounded-md border" />}
+        {preview && (
+          <div className="overflow-hidden rounded-md border">
+            <Image src={preview} alt="preview" width={1200} height={800} className="h-auto w-full" unoptimized />
+          </div>
+        )}
       </Card>
 
       {quality && (

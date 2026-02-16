@@ -91,3 +91,7 @@ create table if not exists public.cases (
 - 벡터 DB(pgvector, Pinecone, Weaviate) 연동
 - OCR 바운딩 박스 시각화 고도화
 - 전문가 워크플로우(검수 단계, 히스토리, 감사 로그)
+
+## 운영 보안
+
+- 키 운영 가이드: `docs/ops-secrets.md`
