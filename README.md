@@ -16,14 +16,14 @@ HERITAI는 갤러리/경매사 운영 관점에서 작품 리스크를 빠르게
 
 - Next.js App Router + TypeScript + TailwindCSS
 - Auth.js / NextAuth v5(beta)
-- Prisma + SQLite (데모용)
+- Prisma + PostgreSQL (Supabase 권장)
 - Google Vision OCR
 
 ## 로컬 실행
 
 ```bash
 npm install
-npm run prisma:migrate -- --name init_auth_case
+npm run prisma:push
 npm run dev
 ```
 
@@ -37,7 +37,7 @@ npm run dev
 AUTH_SECRET=replace-with-32-plus-random-chars
 GOOGLE_CLIENT_ID=replace-me
 GOOGLE_CLIENT_SECRET=replace-me
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres"
 
 GOOGLE_APPLICATION_CREDENTIALS_JSON={...service_account_json...}
 # 또는
@@ -80,10 +80,12 @@ Google Cloud Console에서 OAuth Client를 만들고 아래 Redirect URI를 등�
   - `AUTH_SECRET`
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
-  - `DATABASE_URL` (권장: hosted DB URL, SQLite는 데모 용도)
+  - `DATABASE_URL` (Supabase Postgres 연결 문자열)
   - `GOOGLE_APPLICATION_CREDENTIALS_JSON`
 - 비밀값은 절대 Git에 커밋하지 마세요.
 - `AUTH_SECRET`, `GOOGLE_CLIENT_SECRET`는 Vercel Environment Variables로만 관리하세요.
+- 첫 배포 전 또는 스키마 변경 후 DB 반영:
+  - 로컬에서 `npx prisma db push` 실행
 
 ## HERITAI 브랜딩 규칙
 
