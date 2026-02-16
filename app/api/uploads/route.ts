@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { NextResponse } from 'next/server';
 import path from 'path';
 import { getUploadsDirPath } from '@/lib/paths';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: Request) {
   try {
@@ -14,10 +15,25 @@ export async function POST(request: Request) {
 
     const ext = file.name.split('.').pop() || 'jpg';
     const filename = `${Date.now()}-${randomUUID()}.${ext}`;
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const contentType = file.type || 'image/jpeg';
+
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      const bucket = process.env.SUPABASE_STORAGE_BUCKET || 'uploads';
+      const objectPath = `cases/${filename}`;
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(objectPath, bytes, { contentType, upsert: false });
+      if (error) throw error;
+
+      const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+      return NextResponse.json({ imageUrl: data.publicUrl });
+    }
+
     const uploadDir = getUploadsDirPath();
     await fs.mkdir(uploadDir, { recursive: true });
     const filePath = path.join(uploadDir, filename);
-    const bytes = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(filePath, bytes);
 
     return NextResponse.json({ imageUrl: `/api/uploads/${filename}` });

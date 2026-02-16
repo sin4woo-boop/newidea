@@ -32,6 +32,12 @@ npm run dev
 
 예시는 `.env.example` 참고.
 
+배포(Vercel)에서는 아래 Supabase 환경변수도 권장:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET` (기본값 `uploads`)
+
 ## Google OCR 키 설정 방법 (서비스 계정)
 
 1. GCP 콘솔에서 Vision API 활성화
@@ -48,6 +54,21 @@ npm run dev
   - DB: Supabase/Postgres
   - 이미지: Supabase Storage 또는 S3 호환 스토리지
   - 참고: 현재 코드 기준 Vercel에서는 로컬 파일이 `/tmp`에 임시 저장되며 영구 보관되지 않습니다.
+
+### Supabase 빠른 설정
+
+1. SQL Editor에서 테이블 생성:
+
+```sql
+create table if not exists public.cases (
+  id text primary key,
+  created_at timestamptz not null default now(),
+  payload jsonb not null
+);
+```
+
+2. Storage에 `uploads` 버킷 생성 후 public read 허용
+3. Vercel Environment Variables에 Supabase 값 추가 후 Redeploy
 
 ## 테스트 방법
 
