@@ -20,9 +20,9 @@ function coverageLabel(data: CaseRecord, extraImageCount: number) {
     Math.min(extraImageCount, 2) +
     (data.ocrText.trim().length >= 12 ? 1 : 0) +
     ((data.ocrConfidence ?? 0) >= 0.55 ? 1 : 0);
-  if (score >= 4) return { level: 'High', text: '촬영 커버리지가 충분하며 분석 근거가 안정적입니다.' };
-  if (score >= 2) return { level: 'Medium', text: '기본 커버리지는 확보되었으나 근접 명문 컷 보강이 유효합니다.' };
-  return { level: 'Low', text: '데이터 포인트가 부족해 리스크 추정 신뢰도가 낮을 수 있습니다.' };
+  if (score >= 4) return { level: '충분', text: '촬영 커버리지가 충분하며 분석 근거가 안정적입니다.' };
+  if (score >= 2) return { level: '보통', text: '기본 커버리지는 확보되었으나 근접 명문 컷 보강이 유효합니다.' };
+  return { level: '보완 필요', text: '데이터 포인트가 부족해 리스크 추정 신뢰도가 낮을 수 있습니다.' };
 }
 
 function extractExtraImages(tags: string[]) {
@@ -56,6 +56,26 @@ function parseNotes(notes?: string) {
   }
 }
 
+function firstMatchedSentence(input: string, patterns: RegExp[]) {
+  const lines = input
+    .split(/[\n.!?]/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    if (patterns.some((pattern) => pattern.test(line))) return line;
+  }
+  return '';
+}
+
+function inferGenre(category: CaseRecord['category'], titleGuess?: string) {
+  const title = titleGuess ?? '';
+  if (/(도자|청자|백자|분청|자기)/i.test(title)) return '도자';
+  if (/(서화|서예|문인화|수묵|글씨)/i.test(title)) return '서화';
+  if (/(회화|유화|채색화|풍경화|인물화)/i.test(title)) return '회화';
+  if (category === '기타') return '기타';
+  return category;
+}
+
 export function CaseReportClient({ data }: { data: CaseRecord }) {
   const router = useRouter();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -78,7 +98,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
       ? notes.visualEvidence
       : [
           data.qualityResult.isBlurry
-            ? '초점 흐림 요소가 확인되어 세부 획 판독 신뢰가 제한됩니다.'
+            ? '초점 흔들림 요소가 확인되어 세부 판독 신뢰도에 제약이 있습니다.'
             : '초점과 해상도가 기준을 충족해 시각적 판독 조건이 양호합니다.'
         ];
   const ocrEvidence =
@@ -88,8 +108,15 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   const consistencyEvidence =
     notes?.consistencyEvidence && notes.consistencyEvidence.length > 0
       ? notes.consistencyEvidence
-      : [data.riskScore >= 70 ? '고위험 신호가 일관됩니다.' : '중저위험 신호가 우세합니다.'];
+      : [data.riskScore >= 70 ? '고위험 신호가 관측됩니다.' : '중간 이하 위험 신호가 우세합니다.'];
   const coverage = { level: coverageLabel(data, extraImages.length).level, text: notes?.coverageInsight || coverageLabel(data, extraImages.length).text };
+
+  const genreGuess = inferGenre(data.category, notes?.titleGuess);
+  const styleEraGuess =
+    firstMatchedSentence(notes?.summary ?? '', [/시대/, /양식/, /스타일/, /조선/, /근대/, /현대/]) ||
+    '스타일/시대는 이미지 기반 추정이며 추가 문헌 대조가 필요합니다.';
+  const featureSummary = [...visualEvidence, ...consistencyEvidence].slice(0, 3);
+  const interpretationSummary = notes?.summary || '이미지 기반으로 작품 특징, 일관성, 위험 신호를 종합 해석했습니다.';
 
   async function copyOCR() {
     await navigator.clipboard.writeText(data.ocrText || '');
@@ -115,37 +142,13 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   return (
     <div className="space-y-8 pb-4">
       <header className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Risk Intelligence Report</p>
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{notes?.titleGuess || 'HERITAI Risk Intelligence Summary'}</h1>
-        {notes?.summary && <p className="text-sm text-neutral-600">{notes.summary}</p>}
+        <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">AI Artwork Intelligence Report</p>
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{notes?.titleGuess || `${data.category} 작품 분석 리포트`}</h1>
+        <p className="text-sm text-neutral-600">기술 OCR 중심이 아닌 작품 해석 중심의 구조화 리포트입니다.</p>
       </header>
 
-      <Card className="space-y-5 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Score</p>
-            <p className="mt-1 text-5xl font-bold tabular-nums tracking-tight text-neutral-900">{data.riskScore}</p>
-          </div>
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Level</p>
-            <div className="mt-3">
-              <Badge className={`rounded-full px-3 py-1 text-sm ${riskTone(data.riskScore)}`}>{data.riskLevel}</Badge>
-            </div>
-          </div>
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">AI Confidence</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{aiConfidencePct !== undefined ? `${aiConfidencePct}%` : 'N/A'}</p>
-          </div>
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Data Points</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{dataPoints}</p>
-          </div>
-        </div>
-        <p className="korean-keep border-t border-[#EEE5D8] pt-3 text-xs text-neutral-500">{DISCLAIMER}</p>
-      </Card>
-
       <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">대표 이미지 + 추가 이미지 갤러리</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">작품 이미지</h2>
         <div className="overflow-hidden rounded-2xl border border-[#E9E1D3] bg-[#F3EEE4]">
           {data.imageUrl ? (
             <button type="button" className="relative block aspect-[4/3] w-full" onClick={() => setSelectedImage(data.imageUrl ?? null)}>
@@ -172,61 +175,115 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
       </Card>
 
       <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">작품 정체성 요약</h2>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">장르 추정</p>
+            <p className="mt-2 text-sm font-medium text-neutral-900">{genreGuess}</p>
+          </div>
+          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">스타일/시대 추정</p>
+            <p className="mt-2 text-sm text-neutral-800">{styleEraGuess}</p>
+          </div>
+        </div>
+        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+          <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">주요 특징 3줄 요약</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {featureSummary.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      </Card>
+
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">AI 작품 해석</h2>
+        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+          <p className="mb-2 text-sm leading-relaxed text-neutral-800">{interpretationSummary}</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {visualEvidence.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+          <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">일관성 검토</p>
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {consistencyEvidence.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      </Card>
+
+      <Card className="space-y-5 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">리스크 판단</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Score</p>
+            <p className="mt-1 text-5xl font-bold tabular-nums tracking-tight text-neutral-900">{data.riskScore}</p>
+          </div>
+          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Level</p>
+            <div className="mt-3">
+              <Badge className={`rounded-full px-3 py-1 text-sm ${riskTone(data.riskScore)}`}>{data.riskLevel}</Badge>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">AI Confidence</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{aiConfidencePct !== undefined ? `${aiConfidencePct}%` : 'N/A'}</p>
+          </div>
+          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Data Points</p>
+            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{dataPoints}</p>
+          </div>
+        </div>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+          {data.riskReasons.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+        <p className="korean-keep border-t border-[#EEE5D8] pt-3 text-xs text-neutral-500">{DISCLAIMER}</p>
+      </Card>
+
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">추가 확인 권장</h2>
+        <div className="flex items-center gap-2">
+          <Badge className="bg-[#EFE8DA] text-neutral-700">{coverage.level}</Badge>
+          <p className="text-sm text-neutral-700">{coverage.text}</p>
+        </div>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+          {data.riskReasons.slice(0, 3).map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      </Card>
+
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900">AI 분석 근거 (Visual / OCR / Consistency)</h2>
+          <h2 className="text-lg font-semibold text-neutral-900">OCR 참고 정보 (보조)</h2>
           <Button type="button" variant="outline" className="h-9 rounded-lg border-[#E2D8C4] px-3 text-xs" onClick={copyOCR}>
             {copied ? '복사됨' : 'OCR 복사'}
           </Button>
         </div>
-        <div className="space-y-3">
-          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">Visual</p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-              {visualEvidence.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">OCR</p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-              {ocrEvidence.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-            <p className="mt-2 break-keep whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">
-              {data.ocrText || '인식된 텍스트가 없습니다.'}
-            </p>
-          </div>
-          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">Consistency</p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-              {consistencyEvidence.map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </Card>
-
-      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">촬영 커버리지 인사이트</h2>
-        <div className="flex items-center gap-2">
-          <Badge className="bg-[#EFE8DA] text-neutral-700">{coverage.level}</Badge>
-          <p className="text-sm text-neutral-700">{coverage.text}</p>
+        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {ocrEvidence.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="mt-2 break-keep whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">{data.ocrText || '인식된 텍스트가 없습니다.'}</p>
         </div>
       </Card>
 
       <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-neutral-900">작업</h2>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer" className="block">
-          <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">
-            전문 감정사 검토 요청
-          </Button>
+          <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">전문 감정원 검토 요청</Button>
         </a>
         <Link href="/cases" className="block">
           <Button variant="outline" className="h-12 w-full rounded-2xl border-[#E2D8C4] bg-white">
-            내 접수함으로 이동
+            접수함으로 이동
           </Button>
         </Link>
         <Button
@@ -248,12 +305,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
             <h3 className="text-lg font-semibold text-neutral-900">이 분석 기록을 삭제할까요?</h3>
             <p className="mt-2 text-sm text-neutral-600">삭제하면 복구할 수 없습니다.</p>
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                className="h-11 rounded-xl bg-red-600 text-white hover:bg-red-700"
-                onClick={onDelete}
-                disabled={deleting}
-              >
+              <Button type="button" className="h-11 rounded-xl bg-red-600 text-white hover:bg-red-700" onClick={onDelete} disabled={deleting}>
                 {deleting ? '삭제 중...' : '삭제'}
               </Button>
               <Button

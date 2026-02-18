@@ -59,7 +59,7 @@ function getSlotsByCategory(category: Category): ShotSlot[] {
   if (category === '서화') {
     return [
       { id: 'main', title: '전신 이미지', required: true, ocrTarget: false, cameraPrimary: true },
-      { id: 'inscription_main', title: '명문 근접 (필수)', required: true, ocrTarget: true },
+      { id: 'inscription_main', title: '명문 근접 (선택)', required: false, ocrTarget: true },
       { id: 'inscription_sub', title: '명문 근접 (추가)', required: false, ocrTarget: true }
     ];
   }
