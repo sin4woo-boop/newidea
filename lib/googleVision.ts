@@ -61,14 +61,14 @@ function getLanguageHints() {
 }
 
 function getOCRMode() {
-  const mode = (process.env.OCR_MODE ?? 'quality').toLowerCase();
+  const mode = (process.env.OCR_MODE ?? 'fast').toLowerCase();
   return mode === 'fast' ? 'fast' : 'quality';
 }
 
 function getMaxCandidates() {
-  const n = Number(process.env.OCR_MAX_CANDIDATES ?? 8);
+  const n = Number(process.env.OCR_MAX_CANDIDATES ?? 3);
   if (!Number.isFinite(n)) return 8;
-  return clamp(Math.floor(n), 3, 16);
+  return clamp(Math.floor(n), 2, 16);
 }
 
 async function preprocessBase(input: Buffer) {
@@ -309,7 +309,7 @@ export async function runVisionOCR(imageBuffer: Buffer): Promise<{ text: string;
     allowFallback: true
   });
 
-  if (mode === 'fast' && !isWeak(best)) {
+  if (mode === 'fast') {
     return { text: best.text, confidence: best.confidence, blocks: best.blocks };
   }
 
