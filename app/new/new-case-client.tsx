@@ -166,7 +166,7 @@ export function NewCaseClient() {
       setOcrConfidence(ocrJson.confidence);
       setBlocks(ocrJson.blocks ?? []);
 
-      const risk = scoreRisk({ quality, ocrText: ocrJson.text ?? '' });
+      const risk = scoreRisk({ quality, ocrText: ocrJson.text ?? '', ocrConfidence: ocrJson.confidence });
       const id = createCaseId();
 
       const payload = {
