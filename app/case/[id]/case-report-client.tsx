@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Badge, Button, Card } from '@/components/ui';
+import { Button, Card } from '@/components/ui';
 import { CaseRecord } from '@/lib/types';
 import { DISCLAIMER } from '@/lib/disclaimer';
 
@@ -21,12 +21,6 @@ type ReportNotes = {
   summary?: string;
   visualEvidence?: string[];
 };
-
-function riskTone(score: number) {
-  if (score >= 70) return 'bg-[#E9D6D5] text-[#7D3F3B]';
-  if (score >= 40) return 'bg-[#F3E8CF] text-[#8A6A33]';
-  return 'bg-[#DDE8DF] text-[#486653]';
-}
 
 function extractExtraImages(tags: string[]) {
   return tags
@@ -82,14 +76,14 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   }
 
   return (
-    <div className="space-y-8 pb-4">
+    <div className="space-y-4 pb-4">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Artwork Intelligence</p>
         <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{estimatedTitle}</h1>
         <p className="text-sm text-neutral-600">(추정)</p>
       </header>
 
-      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-4 shadow-sm md:p-5">
         <h2 className="text-lg font-semibold text-neutral-900">작품 이미지</h2>
         <div className="overflow-hidden rounded-2xl border border-[#E9E1D3] bg-[#F3EEE4]">
           {data.imageUrl ? (
@@ -116,7 +110,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         )}
       </Card>
 
-      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-4 shadow-sm md:p-5">
         <h2 className="text-lg font-semibold text-neutral-900">한 줄 요약</h2>
         <p className="text-sm leading-relaxed text-neutral-800">{oneLineSummary}</p>
         <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
@@ -129,7 +123,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         </div>
       </Card>
 
-      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-4 shadow-sm md:p-5">
         <h2 className="text-lg font-semibold text-neutral-900">리스크 판단</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
@@ -138,9 +132,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
           </div>
           <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
             <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">레벨</p>
-            <div className="mt-3">
-              <Badge className={`rounded-full px-3 py-1 text-sm ${riskTone(riskScore)}`}>{riskLevel}</Badge>
-            </div>
+            <p className="mt-3 text-lg font-semibold text-neutral-900">{riskLevel}</p>
           </div>
         </div>
         <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
@@ -150,7 +142,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         </ul>
       </Card>
 
-      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-4 shadow-sm md:p-5">
         <h2 className="text-lg font-semibold text-neutral-900">추가 촬영 권장</h2>
         {recommendedShots.length > 0 ? (
           <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
@@ -164,7 +156,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         <p className="korean-keep border-t border-[#EEE5D8] pt-3 text-xs text-neutral-500">{DISCLAIMER}</p>
       </Card>
 
-      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-4 shadow-sm md:p-5">
         <h2 className="text-lg font-semibold text-neutral-900">전문 검토</h2>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer" className="block">
           <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">전문 감정사 검토 요청</Button>
