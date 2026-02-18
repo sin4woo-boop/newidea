@@ -8,8 +8,10 @@ import { getChecklist } from '@/lib/checklists';
 import { Category, QualityResult } from '@/lib/types';
 
 const maxSourceFileMB = 30;
-const targetMaxEdge = 3200;
-const jpegQuality = 0.95;
+const largeFileWarningMB = 10;
+const targetMaxWidth = 1200;
+const targetMaxFileBytes = 1024 * 1024;
+const jpegQuality = 0.75;
 
 type AnalysisPayload = {
   titleGuess?: string;
@@ -146,27 +148,45 @@ async function analyzeImage(file: File): Promise<QualityResult> {
 }
 
 async function prepareImageForUpload(file: File): Promise<File> {
-  const bitmap = await createImageBitmap(file);
-  const maxEdge = Math.max(bitmap.width, bitmap.height);
-  if (maxEdge <= targetMaxEdge && file.size <= 10 * 1024 * 1024) return file;
+  const sourceUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new window.Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('이미지 로드에 실패했습니다.'));
+      img.src = sourceUrl;
+    });
 
-  const ratio = Math.min(1, targetMaxEdge / maxEdge);
-  const width = Math.max(1, Math.round(bitmap.width * ratio));
-  const height = Math.max(1, Math.round(bitmap.height * ratio));
+    const initialRatio = image.width > targetMaxWidth ? targetMaxWidth / image.width : 1;
+    let width = Math.max(1, Math.round(image.width * initialRatio));
+    let height = Math.max(1, Math.round(image.height * initialRatio));
+    let blob: Blob | null = null;
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(image, 0, 0, width, height);
 
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Canvas unavailable');
-  ctx.drawImage(bitmap, 0, 0, width, height);
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', jpegQuality));
+      if (!blob) throw new Error('이미지 압축에 실패했습니다.');
+      if (blob.size <= targetMaxFileBytes) break;
 
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', jpegQuality));
-  if (!blob) return file;
+      width = Math.max(1, Math.round(width * 0.85));
+      height = Math.max(1, Math.round(height * 0.85));
+    }
 
-  const nextName = file.name.replace(/\.[^.]+$/, '') || 'upload';
-  return new File([blob], `${nextName}.jpg`, { type: 'image/jpeg' });
+    if (!blob || blob.size > targetMaxFileBytes) {
+      throw new Error('이미지 압축 후에도 1MB를 초과합니다. 더 작은 이미지를 선택해주세요.');
+    }
+
+    const nextName = file.name.replace(/\.[^.]+$/, '') || 'upload';
+    return new File([blob], `${nextName}.jpg`, { type: 'image/jpeg' });
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
 }
 
 async function runArtworkAnalysis(category: Category, shots: Array<{ slot: string; file: File }>) {
@@ -201,6 +221,7 @@ export function NewCaseClient() {
   const [blocks, setBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [compressionNotice, setCompressionNotice] = useState('');
 
   const slots = useMemo(() => getSlotsByCategory(category), [category]);
   const checklist = useMemo(() => getChecklist(category), [category]);
@@ -211,12 +232,17 @@ export function NewCaseClient() {
       return;
     }
     setError('');
-    const prepared = await prepareImageForUpload(file);
-    const preview = URL.createObjectURL(file);
-    setShots((prev) => ({ ...prev, [slotId]: { original: file, upload: prepared, preview } }));
+    setCompressionNotice(file.size > largeFileWarningMB * 1024 * 1024 ? '이미지 용량이 너무 큽니다. 자동 압축 중...' : '');
+    try {
+      const prepared = await prepareImageForUpload(file);
+      const preview = URL.createObjectURL(file);
+      setShots((prev) => ({ ...prev, [slotId]: { original: file, upload: prepared, preview } }));
 
-    if (slotId === 'main') {
-      setQuality(await analyzeImage(prepared));
+      if (slotId === 'main') {
+        setQuality(await analyzeImage(prepared));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '이미지 처리에 실패했습니다.');
     }
   }
 
@@ -409,6 +435,7 @@ export function NewCaseClient() {
       )}
 
       {error && <Card className="border-red-200 bg-white p-4 text-sm text-red-700 shadow-sm">{error}</Card>}
+      {compressionNotice && <Card className="border-amber-200 bg-white p-4 text-sm text-amber-700 shadow-sm">{compressionNotice}</Card>}
 
       <div className="space-y-2">
         <Button
