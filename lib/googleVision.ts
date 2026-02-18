@@ -25,10 +25,21 @@ type OCRResult = {
   confidence?: number;
   blocks: OCRBlock[];
   wordCount: number;
+  feature: 'DOCUMENT_TEXT_DETECTION' | 'TEXT_DETECTION';
+  candidateName: string;
+};
+
+type OCRCandidate = {
+  name: string;
+  buffer: Buffer;
 };
 
 function toBase64Url(input: string) {
   return Buffer.from(input).toString('base64url');
+}
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
 
 function loadCredentials(): ServiceAccount | null {
@@ -49,9 +60,74 @@ function getLanguageHints() {
   return fromEnv && fromEnv.length > 0 ? fromEnv : ['ko', 'zh-Hant', 'ja'];
 }
 
-async function preprocessImage(input: Buffer) {
-  // Keep details for calligraphy; only orientation + resize.
-  return sharp(input).rotate().resize({ width: 2400, withoutEnlargement: true }).toBuffer();
+function getOCRMode() {
+  const mode = (process.env.OCR_MODE ?? 'quality').toLowerCase();
+  return mode === 'fast' ? 'fast' : 'quality';
+}
+
+function getMaxCandidates() {
+  const n = Number(process.env.OCR_MAX_CANDIDATES ?? 8);
+  if (!Number.isFinite(n)) return 8;
+  return clamp(Math.floor(n), 3, 16);
+}
+
+async function preprocessBase(input: Buffer) {
+  return sharp(input).rotate().resize({ width: 3000, withoutEnlargement: true }).toBuffer();
+}
+
+async function preprocessEnhanced(input: Buffer) {
+  return sharp(input)
+    .rotate()
+    .resize({ width: 3000, withoutEnlargement: true })
+    .grayscale()
+    .normalize()
+    .sharpen()
+    .toBuffer();
+}
+
+async function createTileCandidates(input: Buffer) {
+  const meta = await sharp(input).metadata();
+  const width = meta.width ?? 0;
+  const height = meta.height ?? 0;
+  if (!width || !height) return [] as OCRCandidate[];
+
+  const cols = 2;
+  const rows = 2;
+  const tileW = Math.floor(width / cols);
+  const tileH = Math.floor(height / rows);
+  const candidates: OCRCandidate[] = [];
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const left = c * tileW;
+      const top = r * tileH;
+      const w = c === cols - 1 ? width - left : tileW;
+      const h = r === rows - 1 ? height - top : tileH;
+
+      const tile = await sharp(input)
+        .extract({ left, top, width: w, height: h })
+        .resize({ width: 2200, withoutEnlargement: false })
+        .toBuffer();
+      candidates.push({ name: `tile-${r}-${c}`, buffer: tile });
+    }
+  }
+  return candidates;
+}
+
+async function createCandidates(input: Buffer) {
+  const base = await preprocessBase(input);
+  const enhanced = await preprocessEnhanced(input);
+  const rotate90 = await sharp(base).rotate(90).toBuffer();
+  const rotate270 = await sharp(base).rotate(270).toBuffer();
+  const tiles = await createTileCandidates(base);
+
+  return [
+    { name: 'base', buffer: base },
+    { name: 'enhanced', buffer: enhanced },
+    { name: 'rot90', buffer: rotate90 },
+    { name: 'rot270', buffer: rotate270 },
+    ...tiles
+  ];
 }
 
 async function getAccessToken(creds: ServiceAccount) {
@@ -86,7 +162,7 @@ async function getAccessToken(creds: ServiceAccount) {
   return tokenJson.access_token;
 }
 
-function parseAnnotation(annotation?: VisionAnnotation): OCRResult {
+function parseAnnotation(annotation?: VisionAnnotation) {
   const pages: VisionPage[] = annotation?.pages ?? [];
 
   const blocks: OCRBlock[] = pages.flatMap((page) =>
@@ -108,15 +184,15 @@ function parseAnnotation(annotation?: VisionAnnotation): OCRResult {
     (page.blocks ?? []).flatMap((block) => (block.paragraphs ?? []).flatMap((paragraph) => paragraph.words ?? []))
   );
 
-  const wordsText = words
+  const wordTexts = words
     .map((word) => (word.symbols ?? []).map((symbol) => symbol.text ?? '').join(''))
     .filter(Boolean);
 
-  const text = (annotation?.text?.trim() || wordsText.join(' ').trim() || '').trim();
-  const confidences = words.map((word) => word.confidence).filter((value): value is number => typeof value === 'number');
+  const text = (annotation?.text?.trim() || wordTexts.join(' ').trim() || '').trim();
+  const confidences = words.map((word) => word.confidence).filter((v): v is number => typeof v === 'number');
   const confidence = confidences.length ? confidences.reduce((sum, v) => sum + v, 0) / confidences.length : undefined;
 
-  return { text, confidence, blocks, wordCount: wordsText.length };
+  return { text, confidence, blocks, wordCount: wordTexts.length };
 }
 
 async function detectByType(args: {
@@ -124,6 +200,7 @@ async function detectByType(args: {
   imageBase64: string;
   languageHints: string[];
   featureType: 'DOCUMENT_TEXT_DETECTION' | 'TEXT_DETECTION';
+  candidateName: string;
 }) {
   const res = await fetch('https://vision.googleapis.com/v1/images:annotate', {
     method: 'POST',
@@ -143,9 +220,7 @@ async function detectByType(args: {
   });
 
   const raw = await res.text();
-  if (!res.ok) {
-    throw new Error(`Vision API failed: ${res.status} ${raw.slice(0, 180)}`);
-  }
+  if (!res.ok) throw new Error(`Vision API failed: ${res.status} ${raw.slice(0, 180)}`);
 
   let json: any;
   try {
@@ -156,22 +231,61 @@ async function detectByType(args: {
 
   const first = json.responses?.[0];
   const full = first?.fullTextAnnotation as VisionAnnotation | undefined;
-  if (full) return parseAnnotation(full);
+  if (full) {
+    const parsed = parseAnnotation(full);
+    return { ...parsed, feature: args.featureType, candidateName: args.candidateName } satisfies OCRResult;
+  }
 
   const detectedText = first?.textAnnotations?.[0]?.description as string | undefined;
+  const plain = (detectedText ?? '').trim();
   return {
-    text: (detectedText ?? '').trim(),
+    text: plain,
     confidence: undefined,
     blocks: [],
-    wordCount: (detectedText ?? '')
+    wordCount: plain
       .split(/\s+/)
       .map((v: string) => v.trim())
-      .filter(Boolean).length
-  };
+      .filter(Boolean).length,
+    feature: args.featureType,
+    candidateName: args.candidateName
+  } satisfies OCRResult;
 }
 
 function rankResult(result: OCRResult) {
-  return result.text.length + (result.confidence ?? 0) * 120 + result.wordCount * 2;
+  const cjk = (result.text.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7a3]/g)?.length ?? 0) / Math.max(result.text.length, 1);
+  return result.text.length + result.wordCount * 2 + (result.confidence ?? 0) * 140 + cjk * 20;
+}
+
+function isWeak(result: OCRResult) {
+  return result.wordCount < 10 || result.text.length < 20 || (result.confidence ?? 0) < 0.45;
+}
+
+async function evaluateCandidate(args: {
+  candidate: OCRCandidate;
+  accessToken: string;
+  languageHints: string[];
+  allowFallback: boolean;
+}) {
+  const imageBase64 = args.candidate.buffer.toString('base64');
+  const doc = await detectByType({
+    accessToken: args.accessToken,
+    imageBase64,
+    languageHints: args.languageHints,
+    featureType: 'DOCUMENT_TEXT_DETECTION',
+    candidateName: args.candidate.name
+  });
+
+  if (!args.allowFallback || !isWeak(doc)) return doc;
+
+  const text = await detectByType({
+    accessToken: args.accessToken,
+    imageBase64,
+    languageHints: args.languageHints,
+    featureType: 'TEXT_DETECTION',
+    candidateName: args.candidate.name
+  });
+
+  return rankResult(text) > rankResult(doc) ? text : doc;
 }
 
 export async function runVisionOCR(imageBuffer: Buffer): Promise<{ text: string; confidence?: number; blocks: OCRBlock[] }> {
@@ -180,29 +294,34 @@ export async function runVisionOCR(imageBuffer: Buffer): Promise<{ text: string;
     throw new Error('Google credentials missing. Set GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS.');
   }
 
-  const preprocessed = await preprocessImage(imageBuffer);
-  const imageBase64 = preprocessed.toString('base64');
-  const accessToken = await getAccessToken(creds);
+  const mode = getOCRMode();
+  const maxCandidates = getMaxCandidates();
   const languageHints = getLanguageHints();
+  const accessToken = await getAccessToken(creds);
 
-  const primary = await detectByType({
+  const candidates = await createCandidates(imageBuffer);
+  const baseCandidate = candidates[0];
+
+  let best = await evaluateCandidate({
+    candidate: baseCandidate,
     accessToken,
-    imageBase64,
     languageHints,
-    featureType: 'DOCUMENT_TEXT_DETECTION'
+    allowFallback: true
   });
 
-  let best = primary;
+  if (mode === 'fast' && !isWeak(best)) {
+    return { text: best.text, confidence: best.confidence, blocks: best.blocks };
+  }
 
-  // Calligraphy / seal cases often improve with TEXT_DETECTION fallback.
-  if (primary.wordCount < 8 || (primary.confidence ?? 0) < 0.45 || primary.text.length < 16) {
-    const fallback = await detectByType({
+  const queue = candidates.slice(1, maxCandidates);
+  for (const candidate of queue) {
+    const result = await evaluateCandidate({
+      candidate,
       accessToken,
-      imageBase64,
       languageHints,
-      featureType: 'TEXT_DETECTION'
+      allowFallback: mode === 'quality'
     });
-    if (rankResult(fallback) > rankResult(primary)) best = fallback;
+    if (rankResult(result) > rankResult(best)) best = result;
   }
 
   return { text: best.text, confidence: best.confidence, blocks: best.blocks };

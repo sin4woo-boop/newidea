@@ -9,8 +9,8 @@ import { scoreRisk } from '@/lib/risk';
 import { Category, QualityResult } from '@/lib/types';
 
 const maxSourceFileMB = 30;
-const targetMaxEdge = 2000;
-const jpegQuality = 0.88;
+const targetMaxEdge = 3200;
+const jpegQuality = 0.95;
 
 function createCaseId() {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
@@ -93,7 +93,7 @@ async function analyzeImage(file: File): Promise<QualityResult> {
 async function prepareImageForUpload(file: File): Promise<File> {
   const bitmap = await createImageBitmap(file);
   const maxEdge = Math.max(bitmap.width, bitmap.height);
-  if (maxEdge <= targetMaxEdge && file.type === 'image/jpeg') return file;
+  if (maxEdge <= targetMaxEdge && file.size <= 10 * 1024 * 1024) return file;
 
   const ratio = Math.min(1, targetMaxEdge / maxEdge);
   const width = Math.max(1, Math.round(bitmap.width * ratio));
