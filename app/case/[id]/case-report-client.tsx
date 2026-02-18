@@ -38,6 +38,24 @@ function extractExtraImages(tags: string[]) {
     .filter(Boolean);
 }
 
+function parseNotes(notes?: string) {
+  if (!notes) return null;
+  try {
+    return JSON.parse(notes) as {
+      titleGuess?: string;
+      summary?: string;
+      visualEvidence?: string[];
+      ocrEvidence?: string[];
+      consistencyEvidence?: string[];
+      coverageInsight?: string;
+      aiConfidence?: number;
+      dataPoints?: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function CaseReportClient({ data }: { data: CaseRecord }) {
   const router = useRouter();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -45,19 +63,33 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const extraImages = useMemo(() => extractExtraImages(data.tags), [data.tags]);
+  const notes = useMemo(() => parseNotes(data.notes), [data.notes]);
 
   const aiConfidencePct =
-    data.ocrConfidence !== undefined ? Math.round(((data.ocrConfidence + Math.min(1, data.ocrText.length / 40)) / 2) * 100) : undefined;
-  const dataPoints = 1 + extraImages.length + (data.ocrText.trim() ? 1 : 0) + (data.riskReasons.length || 0);
+    notes?.aiConfidence !== undefined
+      ? Math.round(notes.aiConfidence * 100)
+      : data.ocrConfidence !== undefined
+      ? Math.round(((data.ocrConfidence + Math.min(1, data.ocrText.length / 40)) / 2) * 100)
+      : undefined;
+  const dataPoints = notes?.dataPoints ?? 1 + extraImages.length + (data.ocrText.trim() ? 1 : 0) + (data.riskReasons.length || 0);
 
-  const visualReason = data.qualityResult.isBlurry
-    ? '초점 흐림 요소가 확인되어 세부 획 판독 신뢰가 제한됩니다.'
-    : '초점과 해상도가 기준을 충족해 시각적 판독 조건이 양호합니다.';
-  const ocrReason =
-    data.ocrText.trim().length >= 12 ? 'OCR 텍스트가 확보되어 작품 정보 근거가 생성되었습니다.' : 'OCR 텍스트가 제한적이어서 명문 근접 샷 보강이 권장됩니다.';
-  const consistencyReason =
-    data.riskScore >= 70 ? '시각 품질, OCR 근거, 점수 신호가 고위험 방향으로 일관됩니다.' : '현재 신호는 중저위험 쪽이며 추가 근거 확보 시 재평가 정밀도가 상승합니다.';
-  const coverage = coverageLabel(data, extraImages.length);
+  const visualEvidence =
+    notes?.visualEvidence && notes.visualEvidence.length > 0
+      ? notes.visualEvidence
+      : [
+          data.qualityResult.isBlurry
+            ? '초점 흐림 요소가 확인되어 세부 획 판독 신뢰가 제한됩니다.'
+            : '초점과 해상도가 기준을 충족해 시각적 판독 조건이 양호합니다.'
+        ];
+  const ocrEvidence =
+    notes?.ocrEvidence && notes.ocrEvidence.length > 0
+      ? notes.ocrEvidence
+      : [data.ocrText.trim().length >= 12 ? 'OCR 텍스트가 확보되었습니다.' : 'OCR 텍스트가 제한적입니다.'];
+  const consistencyEvidence =
+    notes?.consistencyEvidence && notes.consistencyEvidence.length > 0
+      ? notes.consistencyEvidence
+      : [data.riskScore >= 70 ? '고위험 신호가 일관됩니다.' : '중저위험 신호가 우세합니다.'];
+  const coverage = { level: coverageLabel(data, extraImages.length).level, text: notes?.coverageInsight || coverageLabel(data, extraImages.length).text };
 
   async function copyOCR() {
     await navigator.clipboard.writeText(data.ocrText || '');
@@ -84,7 +116,8 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
     <div className="space-y-8 pb-4">
       <header className="space-y-2">
         <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Risk Intelligence Report</p>
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">HERITAI Risk Intelligence Summary</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{notes?.titleGuess || 'HERITAI Risk Intelligence Summary'}</h1>
+        {notes?.summary && <p className="text-sm text-neutral-600">{notes.summary}</p>}
       </header>
 
       <Card className="space-y-5 border-[#E9E1D3] bg-white p-5 shadow-sm">
@@ -148,18 +181,30 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         <div className="space-y-3">
           <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
             <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">Visual</p>
-            <p className="text-sm text-neutral-700">{visualReason}</p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+              {visualEvidence.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           </div>
           <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
             <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">OCR</p>
-            <p className="text-sm text-neutral-700">{ocrReason}</p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+              {ocrEvidence.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
             <p className="mt-2 break-keep whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">
               {data.ocrText || '인식된 텍스트가 없습니다.'}
             </p>
           </div>
           <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
             <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">Consistency</p>
-            <p className="text-sm text-neutral-700">{consistencyReason}</p>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+              {consistencyEvidence.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
           </div>
         </div>
       </Card>

@@ -5,17 +5,25 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Badge, Button, Card } from '@/components/ui';
 import { getChecklist } from '@/lib/checklists';
-import { scoreRisk } from '@/lib/risk';
 import { Category, QualityResult } from '@/lib/types';
 
 const maxSourceFileMB = 30;
 const targetMaxEdge = 3200;
 const jpegQuality = 0.95;
 
-type OCRPayload = {
-  text?: string;
-  confidence?: number;
-  blocks?: unknown[];
+type AnalysisPayload = {
+  titleGuess?: string;
+  summary?: string;
+  visualEvidence?: string[];
+  ocrEvidence?: string[];
+  consistencyEvidence?: string[];
+  coverageInsight?: string;
+  ocrText?: string;
+  aiConfidence?: number;
+  riskScore?: number;
+  riskLevel?: '낮음' | '중간' | '높음';
+  riskReasons?: string[];
+  dataPoints?: number;
 };
 
 type ShotSlot = {
@@ -161,56 +169,23 @@ async function prepareImageForUpload(file: File): Promise<File> {
   return new File([blob], `${nextName}.jpg`, { type: 'image/jpeg' });
 }
 
-async function runOCR(file: File) {
+async function runArtworkAnalysis(category: Category, shots: Array<{ slot: string; file: File }>) {
   const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch('/api/ocr', { method: 'POST', body: formData });
+  formData.append('category', category);
+  for (const shot of shots) formData.append(`shot:${shot.slot}`, shot.file);
+
+  const res = await fetch('/api/analyze-artwork', { method: 'POST', body: formData });
   const bodyText = await res.text();
 
-  let json: OCRPayload = {};
+  let json: AnalysisPayload = {};
   try {
-    json = JSON.parse(bodyText) as OCRPayload;
+    json = JSON.parse(bodyText) as AnalysisPayload;
   } catch {
-    throw new Error(bodyText.slice(0, 140) || 'OCR 응답 파싱에 실패했습니다.');
+    throw new Error(bodyText.slice(0, 160) || 'AI 분석 응답 파싱에 실패했습니다.');
   }
 
-  if (!res.ok) throw new Error((json as { error?: string }).error ?? 'OCR 처리에 실패했습니다.');
+  if (!res.ok) throw new Error((json as { error?: string }).error ?? 'AI 분석에 실패했습니다.');
   return json;
-}
-
-function mergeOCRResults(results: OCRPayload[]) {
-  const hanjaRegex = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
-  const sourceLines = results
-    .flatMap((item) => (item.text ?? '').split(/\n+/))
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const filtered = sourceLines
-    .map((line) => {
-      const compact = line.replace(/\s+/g, '');
-      const hanjaCount = compact.match(hanjaRegex)?.length ?? 0;
-      const allowedOnly = compact.replace(/[^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g, '');
-      const ratio = hanjaCount / Math.max(compact.length, 1);
-      return { line: allowedOnly, hanjaCount, ratio };
-    })
-    .filter((item) => item.hanjaCount >= 2 && item.ratio >= 0.45 && item.line.length > 0)
-    .sort((a, b) => b.hanjaCount - a.hanjaCount || b.line.length - a.line.length);
-
-  const uniqueLines: string[] = [];
-  for (const item of filtered) {
-    if (!uniqueLines.some((saved) => saved === item.line || saved.includes(item.line) || item.line.includes(saved))) {
-      uniqueLines.push(item.line);
-    }
-  }
-
-  const text = (uniqueLines.length ? uniqueLines : sourceLines.slice(0, 3)).join('\n').trim();
-  const confValues = results
-    .map((item) => item.confidence)
-    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-  const confidence = confValues.length ? confValues.reduce((sum, v) => sum + v, 0) / confValues.length : undefined;
-  const blocks = results.flatMap((item) => (Array.isArray(item.blocks) ? item.blocks : []));
-
-  return { text, confidence, blocks };
 }
 
 export function NewCaseClient() {
@@ -280,38 +255,36 @@ export function NewCaseClient() {
         if (res.ok && json.imageUrl) detailImageTags.push(`slot:${slot.id}:${json.imageUrl}`);
       }
 
-      const ocrTargets = slots
-        .filter((slot) => slot.ocrTarget)
-        .map((slot) => shots[slot.id]?.upload)
-        .filter((v): v is File => Boolean(v));
+      const analysisShots = slots
+        .map((slot) => ({ slot: slot.id, file: shots[slot.id]?.upload }))
+        .filter((v): v is { slot: string; file: File } => Boolean(v.file));
+      const analysis = await runArtworkAnalysis(category, analysisShots);
 
-      const ocrResults = ocrTargets.length > 0 ? await Promise.all(ocrTargets.map((target) => runOCR(target))) : [];
-      const merged = mergeOCRResults(ocrResults);
-
-      setOcrText(merged.text);
-      setOcrConfidence(merged.confidence);
-      setBlocks(merged.blocks);
-
-      const risk = scoreRisk({
-        quality,
-        ocrText: merged.text ?? '',
-        ocrConfidence: merged.confidence,
-        category
-      });
-      const id = createCaseId();
+      setOcrText(analysis.ocrText ?? '');
+      setOcrConfidence(typeof analysis.aiConfidence === 'number' ? analysis.aiConfidence : undefined);
+      setBlocks((analysis.ocrEvidence ?? []).map((line) => ({ text: line })));
 
       const payload = {
-        id,
+        id: createCaseId(),
         createdAt: new Date().toISOString(),
         category,
         imageUrl: mainUploadJson.imageUrl,
         qualityResult: quality,
-        ocrText: merged.text ?? '',
-        ocrConfidence: merged.confidence,
-        riskScore: risk.score,
-        riskLevel: risk.level,
-        riskReasons: risk.reasons,
-        notes: '',
+        ocrText: analysis.ocrText ?? '',
+        ocrConfidence: typeof analysis.aiConfidence === 'number' ? analysis.aiConfidence : undefined,
+        riskScore: Number.isFinite(analysis.riskScore) ? Math.max(0, Math.min(100, Math.round(analysis.riskScore ?? 0))) : 50,
+        riskLevel: (analysis.riskLevel ?? '중간') as '낮음' | '중간' | '높음',
+        riskReasons: (analysis.riskReasons ?? ['AI 분석 근거가 제한적입니다.']).slice(0, 4),
+        notes: JSON.stringify({
+          titleGuess: analysis.titleGuess ?? '',
+          summary: analysis.summary ?? '',
+          visualEvidence: analysis.visualEvidence ?? [],
+          ocrEvidence: analysis.ocrEvidence ?? [],
+          consistencyEvidence: analysis.consistencyEvidence ?? [],
+          coverageInsight: analysis.coverageInsight ?? '',
+          aiConfidence: analysis.aiConfidence ?? undefined,
+          dataPoints: analysis.dataPoints ?? undefined
+        }),
         tags: detailImageTags
       };
 
@@ -325,7 +298,7 @@ export function NewCaseClient() {
         throw new Error(saveJson.error ?? '케이스 저장에 실패했습니다.');
       }
 
-      router.push(`/case/${id}`);
+      router.push(`/case/${payload.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : '처리에 실패했습니다. 다시 시도해주세요.');
     } finally {
@@ -402,9 +375,7 @@ export function NewCaseClient() {
                 </Button>
                 <Button
                   type="button"
-                  className={`h-[52px] rounded-xl text-white ${
-                    slot.cameraPrimary ? 'bg-[#B89A5D] hover:bg-[#A88442]' : 'bg-[#B89A5D] hover:bg-[#A88442]'
-                  }`}
+                  className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
                   onClick={() => cameraRefs.current[slot.id]?.click()}
                 >
                   카메라 촬영
@@ -452,10 +423,10 @@ export function NewCaseClient() {
 
       {ocrText && (
         <Card className="space-y-2 border-[#E9E1D3] bg-white p-6 shadow-sm">
-          <h2 className="font-medium text-neutral-900">OCR 통합 미리보기</h2>
+          <h2 className="font-medium text-neutral-900">분석 추출 텍스트</h2>
           <p className="whitespace-pre-wrap text-sm text-neutral-700">{ocrText}</p>
-          {ocrConfidence !== undefined && <p className="text-xs text-neutral-500">평균 신뢰도 {(ocrConfidence * 100).toFixed(1)}%</p>}
-          <p className="text-xs text-neutral-500">블록 수 {blocks.length}</p>
+          {ocrConfidence !== undefined && <p className="text-xs text-neutral-500">AI 신뢰도 {(ocrConfidence * 100).toFixed(1)}%</p>}
+          <p className="text-xs text-neutral-500">근거 포인트 {blocks.length}</p>
         </Card>
       )}
     </div>
