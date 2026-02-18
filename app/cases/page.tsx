@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { Badge, Card } from '@/components/ui';
 import { listCasesByUser } from '@/lib/storage';
+import { CaseDeleteButton } from '@/app/cases/case-delete-button';
 
 function badgeTone(level: string) {
   if (level === '높음') return 'bg-[#E5C9C7] text-[#6F2F2B]';
@@ -27,8 +28,12 @@ export default async function CasesPage() {
 
       <div className="space-y-4">
         {items.map((item) => (
-          <Link href={`/case/${item.id}`} key={item.id} className="block">
-            <Card className="border-[#E9E1D3] bg-white p-4 shadow-sm transition hover:shadow-md">
+          <Card key={item.id} className="border-[#E9E1D3] bg-white p-4 shadow-sm transition hover:shadow-md">
+            <div className="mb-2 flex justify-end">
+              <CaseDeleteButton caseId={item.id} />
+            </div>
+
+            <Link href={`/case/${item.id}`} className="block">
               <div className="flex items-center gap-3">
                 <div className="relative h-14 w-14 flex-none overflow-hidden rounded-lg border border-[#E9E1D3] bg-[#F3EEE4]">
                   {item.imageUrl ? (
@@ -54,14 +59,9 @@ export default async function CasesPage() {
                   <p className="text-3xl font-semibold tabular-nums leading-none tracking-tight text-neutral-900">{item.riskScore}</p>
                   <Badge className={`rounded-full px-3 py-1 text-sm ${badgeTone(item.riskLevel)}`}>{item.riskLevel}</Badge>
                 </div>
-
-                <div className="flex h-10 w-6 items-center justify-center text-xl text-neutral-400">
-                  <span aria-hidden>{'>'}</span>
-                  <span className="sr-only">상세 보기</span>
-                </div>
               </div>
-            </Card>
-          </Link>
+            </Link>
+          </Card>
         ))}
       </div>
     </div>

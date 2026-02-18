@@ -76,3 +76,10 @@ export async function upsertCaseForUser(input: CaseCreateInput, userId: string) 
       });
   return toCaseRecord(row);
 }
+
+export async function deleteCaseByUser(id: string, userId: string) {
+  const current = await prisma.case.findFirst({ where: { id, userId } });
+  if (!current) return false;
+  await prisma.case.delete({ where: { id } });
+  return true;
+}

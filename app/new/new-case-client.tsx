@@ -248,6 +248,15 @@ export function NewCaseClient() {
       const uploadJson = await uploadRes.json();
       if (!uploadRes.ok) throw new Error(uploadJson.error ?? '업로드에 실패했습니다.');
 
+      const detailImageUrls: string[] = [];
+      for (const detailFile of detailUploadFiles) {
+        const detailForm = new FormData();
+        detailForm.append('file', detailFile);
+        const detailRes = await fetch('/api/uploads', { method: 'POST', body: detailForm });
+        const detailJson = await detailRes.json();
+        if (detailRes.ok && detailJson.imageUrl) detailImageUrls.push(detailJson.imageUrl as string);
+      }
+
       const ocrTargets = [mainUploadFile, ...detailUploadFiles];
       const ocrResults = await Promise.all(ocrTargets.map((file) => runOCR(file)));
       const merged = mergeOCRResults(ocrResults);
@@ -271,7 +280,7 @@ export function NewCaseClient() {
         riskLevel: risk.level,
         riskReasons: risk.reasons,
         notes: '',
-        tags: []
+        tags: detailImageUrls.map((url) => `detail-image:${url}`)
       };
 
       const saveRes = await fetch('/api/cases', {

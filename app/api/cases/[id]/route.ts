@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getCaseByUser, upsertCaseForUser } from '@/lib/storage';
+import { deleteCaseByUser, getCaseByUser, upsertCaseForUser } from '@/lib/storage';
 import { CaseCreateInput } from '@/lib/types';
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
@@ -30,5 +30,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       return NextResponse.json({ error: 'forbidden' }, { status: 403 });
     }
     return NextResponse.json({ error: 'failed to update case' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const deleted = await deleteCaseByUser(params.id, session.user.id);
+    if (!deleted) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: 'failed to delete case' }, { status: 500 });
   }
 }
