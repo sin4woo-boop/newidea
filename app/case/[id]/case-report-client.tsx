@@ -26,8 +26,14 @@ function coverageLabel(data: CaseRecord, extraImageCount: number) {
 
 function extractExtraImages(tags: string[]) {
   return tags
-    .filter((tag) => tag.startsWith('detail-image:'))
-    .map((tag) => tag.replace('detail-image:', ''))
+    .map((tag) => {
+      if (tag.startsWith('detail-image:')) return tag.replace('detail-image:', '');
+      if (tag.startsWith('slot:')) {
+        const parts = tag.split(':');
+        return parts.length >= 3 ? parts.slice(2).join(':') : '';
+      }
+      return '';
+    })
     .filter(Boolean);
 }
 

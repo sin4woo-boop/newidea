@@ -11,12 +11,25 @@ import { Category, QualityResult } from '@/lib/types';
 const maxSourceFileMB = 30;
 const targetMaxEdge = 3200;
 const jpegQuality = 0.95;
-const maxDetailShots = 3;
 
 type OCRPayload = {
   text?: string;
   confidence?: number;
   blocks?: unknown[];
+};
+
+type ShotSlot = {
+  id: string;
+  title: string;
+  required: boolean;
+  ocrTarget: boolean;
+  cameraPrimary?: boolean;
+};
+
+type LocalShot = {
+  original: File;
+  upload: File;
+  preview: string;
 };
 
 function createCaseId() {
@@ -30,6 +43,33 @@ function createCaseId() {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
   return `case-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function getSlotsByCategory(category: Category): ShotSlot[] {
+  if (category === '서화') {
+    return [
+      { id: 'main', title: '전신 이미지', required: true, ocrTarget: false, cameraPrimary: true },
+      { id: 'inscription_main', title: '명문 근접 (필수)', required: true, ocrTarget: true },
+      { id: 'inscription_sub', title: '명문 근접 (추가)', required: false, ocrTarget: true }
+    ];
+  }
+  if (category === '회화') {
+    return [
+      { id: 'main', title: '전신 이미지', required: true, ocrTarget: false, cameraPrimary: true },
+      { id: 'seal', title: '서명/낙관 근접 (선택)', required: false, ocrTarget: true }
+    ];
+  }
+  if (category === '도자') {
+    return [
+      { id: 'main', title: '전신 이미지', required: true, ocrTarget: false, cameraPrimary: true },
+      { id: 'base_mark', title: '저부/바닥 명문 근접', required: true, ocrTarget: true },
+      { id: 'damage_detail', title: '구연/손상 부위 근접', required: true, ocrTarget: false }
+    ];
+  }
+  return [
+    { id: 'main', title: '전신 이미지', required: true, ocrTarget: false, cameraPrimary: true },
+    { id: 'detail', title: '근접 이미지 (선택)', required: false, ocrTarget: true }
+  ];
 }
 
 async function analyzeImage(file: File): Promise<QualityResult> {
@@ -175,104 +215,96 @@ function mergeOCRResults(results: OCRPayload[]) {
 
 export function NewCaseClient() {
   const router = useRouter();
-  const mainFileInputRef = useRef<HTMLInputElement | null>(null);
-  const mainCameraInputRef = useRef<HTMLInputElement | null>(null);
-  const detailFileInputRef = useRef<HTMLInputElement | null>(null);
-  const detailCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const cameraRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const [mainOriginalFile, setMainOriginalFile] = useState<File | null>(null);
-  const [mainUploadFile, setMainUploadFile] = useState<File | null>(null);
-  const [mainPreview, setMainPreview] = useState('');
-  const [detailUploadFiles, setDetailUploadFiles] = useState<File[]>([]);
-  const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
+  const [category, setCategory] = useState<Category>('도자');
+  const [shots, setShots] = useState<Record<string, LocalShot | null>>({});
   const [quality, setQuality] = useState<QualityResult | null>(null);
   const [ocrText, setOcrText] = useState('');
   const [ocrConfidence, setOcrConfidence] = useState<number | undefined>();
   const [blocks, setBlocks] = useState<any[]>([]);
-  const [category, setCategory] = useState<Category>('도자');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const slots = useMemo(() => getSlotsByCategory(category), [category]);
   const checklist = useMemo(() => getChecklist(category), [category]);
 
-  async function onMainFileChange(next: File) {
-    if (next.size > maxSourceFileMB * 1024 * 1024) {
+  async function onSelectShot(slotId: string, file: File) {
+    if (file.size > maxSourceFileMB * 1024 * 1024) {
       setError(`파일은 ${maxSourceFileMB}MB 이하만 가능합니다.`);
       return;
     }
     setError('');
-    const prepared = await prepareImageForUpload(next);
-    setMainOriginalFile(next);
-    setMainUploadFile(prepared);
-    setMainPreview(URL.createObjectURL(next));
-    setQuality(await analyzeImage(prepared));
+    const prepared = await prepareImageForUpload(file);
+    const preview = URL.createObjectURL(file);
+    setShots((prev) => ({ ...prev, [slotId]: { original: file, upload: prepared, preview } }));
+
+    if (slotId === 'main') {
+      setQuality(await analyzeImage(prepared));
+    }
   }
 
-  async function onDetailFilesChange(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setError('');
-
-    const room = Math.max(0, maxDetailShots - detailUploadFiles.length);
-    if (room === 0) {
-      setError(`명문 근접 이미지는 최대 ${maxDetailShots}장까지 등록할 수 있습니다.`);
-      return;
-    }
-
-    const selected = Array.from(files).slice(0, room);
-    const preparedList: File[] = [];
-    const previewList: string[] = [];
-
-    for (const file of selected) {
-      if (file.size > maxSourceFileMB * 1024 * 1024) continue;
-      preparedList.push(await prepareImageForUpload(file));
-      previewList.push(URL.createObjectURL(file));
-    }
-
-    setDetailUploadFiles((prev) => [...prev, ...preparedList].slice(0, maxDetailShots));
-    setDetailPreviews((prev) => [...prev, ...previewList].slice(0, maxDetailShots));
-  }
-
-  function removeDetailShot(index: number) {
-    setDetailUploadFiles((prev) => prev.filter((_, i) => i !== index));
-    setDetailPreviews((prev) => prev.filter((_, i) => i !== index));
+  function removeShot(slotId: string) {
+    setShots((prev) => ({ ...prev, [slotId]: null }));
   }
 
   async function onRunAnalysis() {
-    if (!mainUploadFile || !quality) return;
+    const mainShot = shots.main;
+    if (!mainShot || !quality) return;
+
+    const missing = slots.filter((slot) => slot.required && !shots[slot.id]);
+    if (missing.length > 0) {
+      setError(`필수 촬영 컷이 부족합니다: ${missing.map((m) => m.title).join(', ')}`);
+      return;
+    }
+
     setLoading(true);
     setError('');
-    try {
-      const uploadForm = new FormData();
-      uploadForm.append('file', mainUploadFile);
-      const uploadRes = await fetch('/api/uploads', { method: 'POST', body: uploadForm });
-      const uploadJson = await uploadRes.json();
-      if (!uploadRes.ok) throw new Error(uploadJson.error ?? '업로드에 실패했습니다.');
 
-      const detailImageUrls: string[] = [];
-      for (const detailFile of detailUploadFiles) {
-        const detailForm = new FormData();
-        detailForm.append('file', detailFile);
-        const detailRes = await fetch('/api/uploads', { method: 'POST', body: detailForm });
-        const detailJson = await detailRes.json();
-        if (detailRes.ok && detailJson.imageUrl) detailImageUrls.push(detailJson.imageUrl as string);
+    try {
+      const uploadMainForm = new FormData();
+      uploadMainForm.append('file', mainShot.upload);
+      const mainUploadRes = await fetch('/api/uploads', { method: 'POST', body: uploadMainForm });
+      const mainUploadJson = await mainUploadRes.json();
+      if (!mainUploadRes.ok) throw new Error(mainUploadJson.error ?? '대표 이미지 업로드에 실패했습니다.');
+
+      const detailImageTags: string[] = [];
+      for (const slot of slots.filter((s) => s.id !== 'main')) {
+        const shot = shots[slot.id];
+        if (!shot) continue;
+        const form = new FormData();
+        form.append('file', shot.upload);
+        const res = await fetch('/api/uploads', { method: 'POST', body: form });
+        const json = await res.json();
+        if (res.ok && json.imageUrl) detailImageTags.push(`slot:${slot.id}:${json.imageUrl}`);
       }
 
-      const ocrTargets = [mainUploadFile, ...detailUploadFiles];
-      const ocrResults = await Promise.all(ocrTargets.map((file) => runOCR(file)));
+      const ocrTargets = slots
+        .filter((slot) => slot.ocrTarget)
+        .map((slot) => shots[slot.id]?.upload)
+        .filter((v): v is File => Boolean(v));
+
+      const ocrResults = ocrTargets.length > 0 ? await Promise.all(ocrTargets.map((target) => runOCR(target))) : [];
       const merged = mergeOCRResults(ocrResults);
 
-      setOcrText(merged.text ?? '');
+      setOcrText(merged.text);
       setOcrConfidence(merged.confidence);
-      setBlocks(merged.blocks ?? []);
+      setBlocks(merged.blocks);
 
-      const risk = scoreRisk({ quality, ocrText: merged.text ?? '', ocrConfidence: merged.confidence });
+      const risk = scoreRisk({
+        quality,
+        ocrText: merged.text ?? '',
+        ocrConfidence: merged.confidence,
+        category
+      });
       const id = createCaseId();
 
       const payload = {
         id,
         createdAt: new Date().toISOString(),
         category,
-        imageUrl: uploadJson.imageUrl,
+        imageUrl: mainUploadJson.imageUrl,
         qualityResult: quality,
         ocrText: merged.text ?? '',
         ocrConfidence: merged.confidence,
@@ -280,7 +312,7 @@ export function NewCaseClient() {
         riskLevel: risk.level,
         riskReasons: risk.reasons,
         notes: '',
-        tags: detailImageUrls.map((url) => `detail-image:${url}`)
+        tags: detailImageTags
       };
 
       const saveRes = await fetch('/api/cases', {
@@ -309,118 +341,85 @@ export function NewCaseClient() {
         <select
           className="w-full rounded-xl border border-[#E9E1D3] bg-white p-3 text-sm"
           value={category}
-          onChange={(e) => setCategory(e.target.value as Category)}
+          onChange={(e) => {
+            const next = e.target.value as Category;
+            setCategory(next);
+            setShots({});
+            setQuality(null);
+            setOcrText('');
+            setOcrConfidence(undefined);
+            setBlocks([]);
+          }}
         >
           {['도자', '서화', '회화', '기타'].map((item) => (
             <option key={item}>{item}</option>
           ))}
         </select>
 
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-neutral-900">1. 전신 이미지</p>
-          <input
-            ref={mainFileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && onMainFileChange(e.target.files[0])}
-          />
-          <input
-            ref={mainCameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && onMainFileChange(e.target.files[0])}
-          />
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              type="button"
-              className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
-              onClick={() => mainFileInputRef.current?.click()}
-            >
-              파일 선택
-            </Button>
-            <Button
-              type="button"
-              className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
-              onClick={() => mainCameraInputRef.current?.click()}
-            >
-              카메라 촬영
-            </Button>
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-neutral-900">2. 명문 근접 이미지 (선택, 최대 3장)</p>
-          <input
-            ref={detailFileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            className="hidden"
-            onChange={(e) => onDetailFilesChange(e.target.files)}
-          />
-          <input
-            ref={detailCameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            multiple
-            className="hidden"
-            onChange={(e) => onDetailFilesChange(e.target.files)}
-          />
-
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="outline"
-              type="button"
-              className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
-              onClick={() => detailFileInputRef.current?.click()}
-            >
-              근접컷 파일 추가
-            </Button>
-            <Button
-              type="button"
-              className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
-              onClick={() => detailCameraInputRef.current?.click()}
-            >
-              근접컷 촬영
-            </Button>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-dashed border-[#D8C8AA] bg-[#FCFAF6] p-4">
-          {!mainPreview && (
-            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-xl border border-[#EEE5D8] bg-white text-sm text-neutral-500">
-              전신 이미지를 먼저 등록해주세요.
-            </div>
-          )}
-          {mainPreview && (
-            <div className="overflow-hidden rounded-xl border border-[#E9E1D3] bg-white">
-              <Image src={mainPreview} alt="전신 이미지 미리보기" width={1200} height={900} className="h-auto w-full" unoptimized />
-            </div>
-          )}
-        </div>
-
-        {detailPreviews.length > 0 && (
-          <div className="grid grid-cols-3 gap-2">
-            {detailPreviews.map((src, idx) => (
-              <div key={`${src}-${idx}`} className="relative overflow-hidden rounded-xl border border-[#E9E1D3] bg-white">
-                <Image src={src} alt={`명문 근접 ${idx + 1}`} width={360} height={360} className="h-24 w-full object-cover" unoptimized />
-                <button
-                  type="button"
-                  onClick={() => removeDetailShot(idx)}
-                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs text-white"
-                >
-                  x
-                </button>
+        {slots.map((slot) => {
+          const shot = shots[slot.id];
+          return (
+            <div key={slot.id} className="space-y-2 rounded-2xl border border-[#E9E1D3] bg-[#FCFAF6] p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-neutral-900">
+                  {slot.title} {slot.required ? '(필수)' : '(선택)'}
+                </p>
+                {shot && (
+                  <button type="button" className="text-xs text-neutral-500 hover:text-neutral-700" onClick={() => removeShot(slot.id)}>
+                    제거
+                  </button>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+
+              <input
+                ref={(el) => {
+                  inputRefs.current[slot.id] = el;
+                }}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && onSelectShot(slot.id, e.target.files[0])}
+              />
+              <input
+                ref={(el) => {
+                  cameraRefs.current[slot.id] = el;
+                }}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => e.target.files?.[0] && onSelectShot(slot.id, e.target.files[0])}
+              />
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
+                  onClick={() => inputRefs.current[slot.id]?.click()}
+                >
+                  파일 선택
+                </Button>
+                <Button
+                  type="button"
+                  className={`h-[52px] rounded-xl text-white ${
+                    slot.cameraPrimary ? 'bg-[#B89A5D] hover:bg-[#A88442]' : 'bg-[#B89A5D] hover:bg-[#A88442]'
+                  }`}
+                  onClick={() => cameraRefs.current[slot.id]?.click()}
+                >
+                  카메라 촬영
+                </Button>
+              </div>
+
+              <div className="rounded-xl border border-dashed border-[#D8C8AA] bg-white p-2">
+                {!shot && <div className="flex h-24 items-center justify-center text-sm text-neutral-500">아직 이미지가 없습니다.</div>}
+                {shot && (
+                  <Image src={shot.preview} alt={`${slot.title} 미리보기`} width={1200} height={900} className="h-24 w-full rounded-lg object-cover" unoptimized />
+                )}
+              </div>
+            </div>
+          );
+        })}
       </Card>
 
       {quality && (
@@ -444,11 +443,11 @@ export function NewCaseClient() {
         <Button
           className="h-[56px] w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]"
           onClick={onRunAnalysis}
-          disabled={!mainUploadFile || !quality || loading}
+          disabled={!shots.main || !quality || loading}
         >
           {loading ? '분석 중...' : 'AI 리스크 분석 시작'}
         </Button>
-        <p className="text-center text-sm text-neutral-600">전신/근접 이미지 기반으로 작품 리스크를 자동 분석합니다.</p>
+        <p className="text-center text-sm text-neutral-600">카테고리별 촬영 컷을 기반으로 리스크를 자동 분석합니다.</p>
       </div>
 
       {ocrText && (

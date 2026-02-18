@@ -54,10 +54,11 @@ export default async function CasesPage() {
                   </p>
                 </div>
 
-                <div className="flex flex-col items-end gap-1">
-                  <p className="text-[10px] uppercase tracking-[0.14em] text-neutral-500">Risk</p>
-                  <p className="text-3xl font-semibold tabular-nums leading-none tracking-tight text-neutral-900">{item.riskScore}</p>
-                  <Badge className={`rounded-full px-3 py-1 text-sm ${badgeTone(item.riskLevel)}`}>{item.riskLevel}</Badge>
+                <div className="w-20 flex-none">
+                  <div className="flex flex-col items-end gap-1">
+                    <p className="text-2xl font-semibold tabular-nums text-right leading-none text-neutral-900">{item.riskScore}</p>
+                    <Badge className={`rounded-full px-3 py-1 text-sm ${badgeTone(item.riskLevel)}`}>{item.riskLevel}</Badge>
+                  </div>
                 </div>
               </div>
             </Link>

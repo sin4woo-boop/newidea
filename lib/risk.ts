@@ -1,10 +1,10 @@
-import { QualityResult, RiskLevel } from './types';
+import { Category, QualityResult, RiskLevel } from './types';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-export function scoreRisk(input: { quality: QualityResult; ocrText: string; ocrConfidence?: number }) {
+export function scoreRisk(input: { quality: QualityResult; ocrText: string; ocrConfidence?: number; category?: Category }) {
   const reasons: string[] = [];
   let score = 15;
 
@@ -30,11 +30,14 @@ export function scoreRisk(input: { quality: QualityResult; ocrText: string; ocrC
   score += brightnessPenalty;
 
   const normalized = input.ocrText.trim();
+  const textMissingPenalty = input.category === '회화' ? 10 : 26;
+  const textShortPenalty = input.category === '회화' ? 8 : 18;
+
   if (!normalized) {
-    score += 26;
-    reasons.push('명문/OCR 텍스트가 거의 없어 근거 데이터가 부족합니다.');
+    score += textMissingPenalty;
+    reasons.push('OCR 텍스트가 제한적이어서 근거 데이터가 부족할 수 있습니다.');
   } else if (normalized.length < 8) {
-    score += 18;
+    score += textShortPenalty;
     reasons.push('인식 텍스트가 매우 짧아 판독 신뢰도가 낮습니다.');
   } else if (normalized.length < 20) {
     score += 9;
