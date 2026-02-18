@@ -127,19 +127,22 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
   const client = new GoogleGenerativeAI(apiKey);
   const geminiModel = client.getGenerativeModel({ model });
 
-  const contentParts: Array<
-    | string
+  type GeminiPart =
+    | { text: string }
     | {
         inlineData: {
           data: string;
           mimeType: string;
         };
-      }
-  > = [buildPrompt(input.category)];
+      };
+
+  const contentParts: GeminiPart[] = [{ text: buildPrompt(input.category) }];
 
   for (const shot of input.shots) {
     const mimeType = await detectMimeType(shot.buffer);
-    contentParts.push(`image slot: ${shot.slot}`);
+    if (shot.slot) {
+      contentParts.push({ text: `첨부 이미지: ${shot.slot}` });
+    }
     contentParts.push({
       inlineData: {
         data: shot.buffer.toString('base64'),
@@ -152,8 +155,7 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
     contents: [{ role: 'user', parts: contentParts }],
     generationConfig: {
       responseMimeType: 'application/json'
-    },
-    media_resolution: 'ultra_high'
+    }
   } as any);
 
   const rawText = result.response.text();
