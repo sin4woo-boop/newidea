@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Badge, Button, Card } from '@/components/ui';
 import { getChecklist } from '@/lib/checklists';
 import { Category, QualityResult } from '@/lib/types';
+import { normalizeRiskLevel } from '@/lib/risk-level';
 
 const maxSourceFileMB = 30;
 const largeFileWarningMB = 10;
@@ -19,7 +20,7 @@ type AnalysisPayload = {
   one_line_summary?: string;
   key_features?: string[];
   risk_score?: number;
-  risk_level?: '낮음' | '중간' | '높음';
+  risk_level?: string;
   risk_reasons?: string[];
   recommended_shots?: string[];
 };
@@ -281,7 +282,7 @@ export function NewCaseClient() {
         ocrText: '',
         ocrConfidence: undefined,
         riskScore: Number.isFinite(analysis.risk_score) ? Math.max(0, Math.min(100, Math.round(analysis.risk_score ?? 0))) : 50,
-        riskLevel: (analysis.risk_level ?? '중간') as '낮음' | '중간' | '높음',
+        riskLevel: normalizeRiskLevel(analysis.risk_level ?? '중간'),
         riskReasons: (analysis.risk_reasons ?? ['AI 분석 근거가 제한적입니다.']).slice(0, 3),
         notes: JSON.stringify({
           estimated_title: analysis.estimated_title ?? '',
@@ -289,7 +290,7 @@ export function NewCaseClient() {
           one_line_summary: analysis.one_line_summary ?? '',
           key_features: analysis.key_features ?? [],
           risk_score: analysis.risk_score ?? undefined,
-          risk_level: analysis.risk_level ?? undefined,
+          risk_level: normalizeRiskLevel(analysis.risk_level ?? '중간'),
           risk_reasons: analysis.risk_reasons ?? [],
           recommended_shots: analysis.recommended_shots ?? []
         }),

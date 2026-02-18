@@ -5,9 +5,10 @@ import { auth } from '@/auth';
 import { Badge, Card } from '@/components/ui';
 import { listCasesByUser } from '@/lib/storage';
 import { CasesToast } from '@/app/cases/cases-toast';
+import { normalizeRiskLevel } from '@/lib/risk-level';
 
 function badgeTone(level: string) {
-  if (level === '높음') return 'bg-[#E5C9C7] text-[#6F2F2B]';
+  if (level === '매우 높음' || level === '높음') return 'bg-[#E5C9C7] text-[#6F2F2B]';
   if (level === '중간') return 'bg-[#F1DFB8] text-[#7B5A1C]';
   return 'bg-[#D4E4D8] text-[#2F5D3E]';
 }
@@ -29,6 +30,9 @@ export default async function CasesPage() {
 
       <div className="space-y-4">
         {items.map((item) => (
+          (() => {
+            const normalizedRiskLevel = normalizeRiskLevel(item.riskLevel);
+            return (
           <Card key={item.id} className="border-[#E9E1D3] bg-white p-4 shadow-sm transition hover:shadow-md">
             <Link href={`/case/${item.id}`} className="block">
               <div className="flex items-center gap-3">
@@ -54,12 +58,14 @@ export default async function CasesPage() {
                 <div className="w-20 flex-none">
                   <div className="flex flex-col items-end gap-1">
                     <p className="text-2xl font-semibold tabular-nums text-right leading-none text-neutral-900">{item.riskScore}</p>
-                    <Badge className={`rounded-full px-3 py-1 text-sm ${badgeTone(item.riskLevel)}`}>{item.riskLevel}</Badge>
+                    <Badge className={`rounded-full px-3 py-1 text-sm ${badgeTone(normalizedRiskLevel)}`}>{normalizedRiskLevel}</Badge>
                   </div>
                 </div>
               </div>
             </Link>
           </Card>
+            );
+          })()
         ))}
       </div>
     </div>

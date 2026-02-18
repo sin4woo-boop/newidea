@@ -13,7 +13,7 @@ export type QualityResult = {
   guides: string[];
 };
 
-export type RiskLevel = '낮음' | '중간' | '높음';
+export type RiskLevel = '낮음' | '중간' | '높음' | '매우 높음';
 
 export type OCRBlock = {
   text: string;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Card } from '@/components/ui';
 import { CaseRecord } from '@/lib/types';
+import { normalizeRiskLevel } from '@/lib/risk-level';
 
 export function AdminClient() {
   const [items, setItems] = useState<CaseRecord[]>([]);
@@ -55,7 +56,7 @@ export function AdminClient() {
               className="w-full rounded-xl border border-[#E9E1D3] p-2 text-left text-sm hover:bg-[#F7F4EE]"
               onClick={() => setSelected(item)}
             >
-              {item.category} · {item.riskLevel} ({item.riskScore})
+              {item.category} · {normalizeRiskLevel(item.riskLevel)} ({item.riskScore})
             </button>
           ))}
         </Card>

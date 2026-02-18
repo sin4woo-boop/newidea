@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { Button, Card } from '@/components/ui';
 import { CaseRecord } from '@/lib/types';
 import { DISCLAIMER } from '@/lib/disclaimer';
+import { normalizeRiskLevel } from '@/lib/risk-level';
 
 type ReportNotes = {
   estimated_title?: string;
@@ -14,7 +15,7 @@ type ReportNotes = {
   one_line_summary?: string;
   key_features?: string[];
   risk_score?: number;
-  risk_level?: '낮음' | '중간' | '높음';
+  risk_level?: string;
   risk_reasons?: string[];
   recommended_shots?: string[];
   titleGuess?: string;
@@ -56,7 +57,7 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   const oneLineSummary = notes?.one_line_summary || notes?.summary || '이미지 기반 작품 분석 결과입니다.';
   const keyFeatures = (notes?.key_features?.length ? notes.key_features : notes?.visualEvidence ?? []).slice(0, 3);
   const riskScore = Number.isFinite(notes?.risk_score) ? Math.max(0, Math.min(100, Math.round(Number(notes?.risk_score)))) : data.riskScore;
-  const riskLevel = (notes?.risk_level ?? data.riskLevel) as '낮음' | '중간' | '높음';
+  const riskLevel = normalizeRiskLevel(notes?.risk_level ?? data.riskLevel);
   const riskReasons = (notes?.risk_reasons?.length ? notes.risk_reasons : data.riskReasons).slice(0, 3);
   const recommendedShots = (notes?.recommended_shots ?? []).slice(0, 3);
 

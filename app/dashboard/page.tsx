@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { Badge, Button, Card } from '@/components/ui';
 import { listCasesByUser } from '@/lib/storage';
 import { CaseRecord } from '@/lib/types';
+import { normalizeRiskLevel } from '@/lib/risk-level';
 
 function formatDelta(current: number, previous: number) {
   if (previous === 0) return { text: '변화 없음', positive: true };
@@ -189,7 +190,7 @@ export default async function DashboardPage() {
               </div>
               <div className="space-y-1 text-right">
                 <p className="text-sm font-semibold tabular-nums text-neutral-900">{item.riskScore}</p>
-                <Badge className={riskBadgeClass(item.riskScore)}>{item.riskLevel}</Badge>
+                <Badge className={riskBadgeClass(item.riskScore)}>{normalizeRiskLevel(item.riskLevel)}</Badge>
               </div>
             </Link>
           ))}
