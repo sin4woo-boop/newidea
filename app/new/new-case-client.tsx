@@ -9,9 +9,9 @@ import { Category, QualityResult } from '@/lib/types';
 
 const maxSourceFileMB = 30;
 const largeFileWarningMB = 10;
-const targetMaxWidth = 1200;
-const targetMaxFileBytes = 1024 * 1024;
-const jpegQuality = 0.75;
+const targetMaxWidth = 3072;
+const targetMaxFileBytes = 10 * 1024 * 1024;
+const jpegQuality = 0.9;
 
 type AnalysisPayload = {
   estimated_title?: string;
@@ -154,28 +154,21 @@ async function prepareImageForUpload(file: File): Promise<File> {
     });
 
     const initialRatio = image.width > targetMaxWidth ? targetMaxWidth / image.width : 1;
-    let width = Math.max(1, Math.round(image.width * initialRatio));
-    let height = Math.max(1, Math.round(image.height * initialRatio));
-    let blob: Blob | null = null;
+    const width = Math.max(1, Math.round(image.width * initialRatio));
+    const height = Math.max(1, Math.round(image.height * initialRatio));
 
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas unavailable');
-      ctx.drawImage(image, 0, 0, width, height);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas unavailable');
+    ctx.drawImage(image, 0, 0, width, height);
 
-      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', jpegQuality));
-      if (!blob) throw new Error('이미지 압축에 실패했습니다.');
-      if (blob.size <= targetMaxFileBytes) break;
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', jpegQuality));
+    if (!blob) throw new Error('이미지 압축에 실패했습니다.');
 
-      width = Math.max(1, Math.round(width * 0.85));
-      height = Math.max(1, Math.round(height * 0.85));
-    }
-
-    if (!blob || blob.size > targetMaxFileBytes) {
-      throw new Error('이미지 압축 후에도 1MB를 초과합니다. 더 작은 이미지를 선택해주세요.');
+    if (blob.size > targetMaxFileBytes) {
+      throw new Error('이미지 용량이 너무 큽니다. 고화질을 유지하며 용량을 줄여주세요');
     }
 
     const nextName = file.name.replace(/\.[^.]+$/, '') || 'upload';

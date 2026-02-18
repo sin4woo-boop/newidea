@@ -6,8 +6,8 @@ type AnalyzeInput = {
   shots: Array<{ slot: string; buffer: Buffer }>;
 };
 
-type CategoryGuess = '서화' | '회화' | '도자' | '공예' | '기타';
-type RiskLevel = '낮음' | '중간' | '높음';
+type CategoryGuess = '?쒗솕' | '?뚰솕' | '?꾩옄' | '怨듭삁' | '湲고?';
+type RiskLevel = '??쓬' | '以묎컙' | '?믪쓬';
 
 type AnalyzeOutput = {
   estimated_title: string;
@@ -46,17 +46,18 @@ async function detectMimeType(buffer: Buffer) {
 
 function toCategoryGuess(raw: unknown, fallback: string): CategoryGuess {
   const value = String(raw ?? '').trim();
-  if (value === '서화' || value === '회화' || value === '도자' || value === '공예' || value === '기타') return value;
-  if (fallback === '서화' || fallback === '회화' || fallback === '도자' || fallback === '공예') return fallback;
-  return '기타';
+  if (value === '?쒗솕' || value === '?뚰솕' || value === '?꾩옄' || value === '怨듭삁' || value === '湲고?') return value;
+  if (fallback === '?쒗솕' || fallback === '?뚰솕' || fallback === '?꾩옄' || fallback === '怨듭삁') return fallback;
+  return '湲고?';
 }
 
 function toRiskLevel(raw: unknown): RiskLevel {
-  const value = String(raw ?? '').trim();
-  if (value === '낮음' || value === '중간' || value === '높음') return value;
-  if (value.toLowerCase().includes('high')) return '높음';
-  if (value.toLowerCase().includes('medium')) return '중간';
-  return '낮음';
+  const value = String(raw ?? '').trim().toLowerCase();
+  if (value === '??쓬' || value === '以묎컙' || value === '?믪쓬') return value as RiskLevel;
+  if (value.includes('very high') || value.includes('critical') || value.includes('매우 높음')) return '?믪쓬';
+  if (value.includes('high') || value.includes('높음')) return '?믪쓬';
+  if (value.includes('medium') || value.includes('보통') || value.includes('중간')) return '以묎컙';
+  return '??쓬';
 }
 
 function toStringList(raw: unknown, max = 3) {
@@ -67,31 +68,56 @@ function toStringList(raw: unknown, max = 3) {
     .slice(0, max);
 }
 
+function toSafeScore(raw: unknown, fallback = 50) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 function buildPrompt(category: string) {
   return [
-    "너는 갤러리용 '작품 리스크 인텔리전스' 분석기다.",
-    '반드시 한국어로만 답하고 영어를 절대 쓰지 마라.',
-    '장황하게 쓰지 말고, 아래 JSON 형식으로만 출력하라.',
-    '추정/가정은 (추정)으로 표시하라.',
-    `카테고리 힌트: ${category}`,
+    '# 역할: 고미술(회화, 서화, 도자) 리스크 지능형 분석 전문가',
     '',
-    '[출력 JSON 스키마]',
+    '# 감정 전략:',
+    '1. 촬영 환경 무시: 이미지의 격자무늬(Moire), 픽셀 노이즈, 조명 반사는 디지털 재현 흔적으로 보고 분석에서 배제한다.',
+    '2. 카테고리별 핵심 지표:',
+    '   - 회화/서화: 필선 숙련도, 준법, 묵법, 제발(한자) 해독 기반 작가 데이터 대조.',
+    '   - 도자: 기형 비례, 유색 깊이, 빙렬 자연스러움, 굽 태토 분석.',
+    '3. 확률적 작가 추론: 단정 결론 대신 후보군과 확률(Confidence Score) 제시.',
+    '',
+    '# 입력 카테고리 힌트',
+    `- ${category}`,
+    '',
+    '# 출력 규칙',
+    '- 반드시 JSON만 출력한다.',
+    '- 마크다운 코드펜스 사용 금지.',
+    '- 숫자 필드는 0~100 범위를 지킨다.',
+    '',
+    '# 출력 스키마',
     '{',
-    '  "estimated_title": "작품 제목 또는 작품명(추정)",',
-    '  "category_guess": "서화|회화|도자|공예|기타",',
-    '  "one_line_summary": "한 줄 요약",',
-    '  "key_features": ["핵심 특징1","특징2","특징3"],',
-    '  "risk_score": 0,',
-    '  "risk_level": "낮음|중간|높음",',
-    '  "risk_reasons": ["근거1","근거2","근거3"],',
-    '  "recommended_shots": ["추가 촬영 권장1","권장2"]',
-    '}',
-    '',
-    '[규칙]',
-    '- risk_score는 0~100 정수',
-    '- key_features, risk_reasons, recommended_shots는 각각 최대 3개',
-    '- JSON 외 텍스트 출력 금지'
+    '  "category": "회화 | 서화 | 도자",',
+    '  "detected_writer": {',
+    '    "primary": { "name": "작가명", "confidence": 0, "reason": "화풍/제발 근거" },',
+    '    "alternatives": [{ "name": "작가명", "probability": 0, "reason": "유사성 설명" }]',
+    '  },',
+    '  "risk_analysis": {',
+    '    "score": 0,',
+    '    "level": "낮음 | 보통 | 높음 | 매우 높음",',
+    '    "factors": ["리스크 요인 1", "리스크 요인 2"]',
+    '  },',
+    '  "expert_comment": "노이즈 너머로 보이는 작품 완성도 총평"',
+    '}'
   ].join('\n');
+}
+
+function getPrimarySummary(parsed: any) {
+  const primaryName = String(parsed?.detected_writer?.primary?.name ?? '').trim();
+  const primaryReason = String(parsed?.detected_writer?.primary?.reason ?? '').trim();
+  const primaryConfidence = toSafeScore(parsed?.detected_writer?.primary?.confidence, 0);
+
+  if (!primaryName) return '';
+  const confidenceText = primaryConfidence > 0 ? ` (${primaryConfidence}%)` : '';
+  return primaryReason ? `${primaryName}${confidenceText} - ${primaryReason}` : `${primaryName}${confidenceText}`;
 }
 
 export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<AnalyzeOutput> {
@@ -113,7 +139,7 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
 
   for (const shot of input.shots) {
     const mimeType = await detectMimeType(shot.buffer);
-    contentParts.push(`이미지 슬롯: ${shot.slot}`);
+    contentParts.push(`image slot: ${shot.slot}`);
     contentParts.push({
       inlineData: {
         data: shot.buffer.toString('base64'),
@@ -122,22 +148,41 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
     });
   }
 
-  const result = await geminiModel.generateContent(contentParts);
+  const result = await geminiModel.generateContent({
+    contents: [{ role: 'user', parts: contentParts }],
+    generationConfig: {
+      responseMimeType: 'application/json'
+    },
+    media_resolution: 'ultra_high'
+  } as any);
+
   const rawText = result.response.text();
   const parsed = JSON.parse(stripCodeFence(rawText));
 
+  const riskFactors = toStringList(parsed?.risk_analysis?.factors ?? parsed?.risk_reasons, 3);
+  const primarySummary = getPrimarySummary(parsed);
+  const alternatives = toStringList(
+    Array.isArray(parsed?.detected_writer?.alternatives)
+      ? parsed.detected_writer.alternatives.map((item: any) => {
+          const name = String(item?.name ?? '').trim();
+          const prob = toSafeScore(item?.probability, 0);
+          const reason = String(item?.reason ?? '').trim();
+          if (!name) return '';
+          const withProb = prob > 0 ? `${name} (${prob}%)` : name;
+          return reason ? `${withProb} - ${reason}` : withProb;
+        })
+      : [],
+    2
+  );
+
   return {
-    estimated_title: String(parsed.estimated_title ?? parsed.titleGuess ?? '작품명 미상(추정)'),
-    category_guess: toCategoryGuess(parsed.category_guess, input.category),
-    one_line_summary: String(parsed.one_line_summary ?? parsed.summary ?? ''),
-    key_features: toStringList(parsed.key_features ?? parsed.visualEvidence, 3),
-    risk_score: Number.isFinite(parsed.risk_score)
-      ? Math.max(0, Math.min(100, Math.round(Number(parsed.risk_score))))
-      : Number.isFinite(parsed.riskScore)
-      ? Math.max(0, Math.min(100, Math.round(Number(parsed.riskScore))))
-      : 50,
-    risk_level: toRiskLevel(parsed.risk_level ?? parsed.riskLevel),
-    risk_reasons: toStringList(parsed.risk_reasons ?? parsed.riskReasons, 3),
-    recommended_shots: toStringList(parsed.recommended_shots, 3)
+    estimated_title: String(parsed?.detected_writer?.primary?.name ?? parsed?.estimated_title ?? '?묓뭹紐?誘몄긽(異붿젙)'),
+    category_guess: toCategoryGuess(parsed?.category ?? parsed?.category_guess, input.category),
+    one_line_summary: String(parsed?.expert_comment ?? parsed?.one_line_summary ?? ''),
+    key_features: toStringList([primarySummary, ...alternatives], 3),
+    risk_score: toSafeScore(parsed?.risk_analysis?.score ?? parsed?.risk_score, 50),
+    risk_level: toRiskLevel(parsed?.risk_analysis?.level ?? parsed?.risk_level),
+    risk_reasons: riskFactors.length > 0 ? riskFactors : ['AI 분석 근거가 제한적입니다.'],
+    recommended_shots: toStringList(parsed?.recommended_shots, 3)
   };
 }
