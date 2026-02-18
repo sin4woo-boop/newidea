@@ -11,6 +11,13 @@ import { Category, QualityResult } from '@/lib/types';
 const maxSourceFileMB = 30;
 const targetMaxEdge = 3200;
 const jpegQuality = 0.95;
+const maxDetailShots = 3;
+
+type OCRPayload = {
+  text?: string;
+  confidence?: number;
+  blocks?: unknown[];
+};
 
 function createCaseId() {
   if (typeof globalThis.crypto?.randomUUID === 'function') return globalThis.crypto.randomUUID();
@@ -114,14 +121,57 @@ async function prepareImageForUpload(file: File): Promise<File> {
   return new File([blob], `${nextName}.jpg`, { type: 'image/jpeg' });
 }
 
+async function runOCR(file: File) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch('/api/ocr', { method: 'POST', body: formData });
+  const bodyText = await res.text();
+
+  let json: OCRPayload = {};
+  try {
+    json = JSON.parse(bodyText) as OCRPayload;
+  } catch {
+    throw new Error(bodyText.slice(0, 140) || 'OCR 응답 파싱에 실패했습니다.');
+  }
+
+  if (!res.ok) throw new Error((json as { error?: string }).error ?? 'OCR 처리에 실패했습니다.');
+  return json;
+}
+
+function mergeOCRResults(results: OCRPayload[]) {
+  const lines = results
+    .flatMap((item) => (item.text ?? '').split(/\n+/))
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const uniqueLines: string[] = [];
+  for (const line of lines) {
+    if (!uniqueLines.some((saved) => saved === line || saved.includes(line) || line.includes(saved))) {
+      uniqueLines.push(line);
+    }
+  }
+
+  const text = uniqueLines.join('\n').trim();
+  const confValues = results
+    .map((item) => item.confidence)
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+  const confidence = confValues.length ? confValues.reduce((sum, v) => sum + v, 0) / confValues.length : undefined;
+  const blocks = results.flatMap((item) => (Array.isArray(item.blocks) ? item.blocks : []));
+
+  return { text, confidence, blocks };
+}
+
 export function NewCaseClient() {
   const router = useRouter();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const mainFileInputRef = useRef<HTMLInputElement | null>(null);
+  const mainCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const detailFileInputRef = useRef<HTMLInputElement | null>(null);
+  const detailCameraInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState('');
+  const [mainOriginalFile, setMainOriginalFile] = useState<File | null>(null);
+  const [mainUploadFile, setMainUploadFile] = useState<File | null>(null);
+  const [mainPreview, setMainPreview] = useState('');
+  const [detailUploadFiles, setDetailUploadFiles] = useState<File[]>([]);
+  const [detailPreviews, setDetailPreviews] = useState<string[]>([]);
   const [quality, setQuality] = useState<QualityResult | null>(null);
   const [ocrText, setOcrText] = useState('');
   const [ocrConfidence, setOcrConfidence] = useState<number | undefined>();
@@ -132,41 +182,68 @@ export function NewCaseClient() {
 
   const checklist = useMemo(() => getChecklist(category), [category]);
 
-  async function onFileChange(next: File) {
+  async function onMainFileChange(next: File) {
     if (next.size > maxSourceFileMB * 1024 * 1024) {
       setError(`파일은 ${maxSourceFileMB}MB 이하만 가능합니다.`);
       return;
     }
     setError('');
     const prepared = await prepareImageForUpload(next);
-    setFile(next);
-    setUploadFile(prepared);
-    setPreview(URL.createObjectURL(next));
+    setMainOriginalFile(next);
+    setMainUploadFile(prepared);
+    setMainPreview(URL.createObjectURL(next));
     setQuality(await analyzeImage(prepared));
   }
 
-  async function onRunOCR() {
-    if (!uploadFile || !quality) return;
+  async function onDetailFilesChange(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setError('');
+
+    const room = Math.max(0, maxDetailShots - detailUploadFiles.length);
+    if (room === 0) {
+      setError(`명문 근접 이미지는 최대 ${maxDetailShots}장까지 등록할 수 있습니다.`);
+      return;
+    }
+
+    const selected = Array.from(files).slice(0, room);
+    const preparedList: File[] = [];
+    const previewList: string[] = [];
+
+    for (const file of selected) {
+      if (file.size > maxSourceFileMB * 1024 * 1024) continue;
+      preparedList.push(await prepareImageForUpload(file));
+      previewList.push(URL.createObjectURL(file));
+    }
+
+    setDetailUploadFiles((prev) => [...prev, ...preparedList].slice(0, maxDetailShots));
+    setDetailPreviews((prev) => [...prev, ...previewList].slice(0, maxDetailShots));
+  }
+
+  function removeDetailShot(index: number) {
+    setDetailUploadFiles((prev) => prev.filter((_, i) => i !== index));
+    setDetailPreviews((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function onRunAnalysis() {
+    if (!mainUploadFile || !quality) return;
     setLoading(true);
     setError('');
     try {
       const uploadForm = new FormData();
-      uploadForm.append('file', uploadFile);
+      uploadForm.append('file', mainUploadFile);
       const uploadRes = await fetch('/api/uploads', { method: 'POST', body: uploadForm });
       const uploadJson = await uploadRes.json();
       if (!uploadRes.ok) throw new Error(uploadJson.error ?? '업로드에 실패했습니다.');
 
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      const ocrRes = await fetch('/api/ocr', { method: 'POST', body: formData });
-      const ocrJson = await ocrRes.json();
-      if (!ocrRes.ok) throw new Error(ocrJson.error ?? 'OCR 처리에 실패했습니다.');
+      const ocrTargets = [mainUploadFile, ...detailUploadFiles];
+      const ocrResults = await Promise.all(ocrTargets.map((file) => runOCR(file)));
+      const merged = mergeOCRResults(ocrResults);
 
-      setOcrText(ocrJson.text ?? '');
-      setOcrConfidence(ocrJson.confidence);
-      setBlocks(ocrJson.blocks ?? []);
+      setOcrText(merged.text ?? '');
+      setOcrConfidence(merged.confidence);
+      setBlocks(merged.blocks ?? []);
 
-      const risk = scoreRisk({ quality, ocrText: ocrJson.text ?? '', ocrConfidence: ocrJson.confidence });
+      const risk = scoreRisk({ quality, ocrText: merged.text ?? '', ocrConfidence: merged.confidence });
       const id = createCaseId();
 
       const payload = {
@@ -175,8 +252,8 @@ export function NewCaseClient() {
         category,
         imageUrl: uploadJson.imageUrl,
         qualityResult: quality,
-        ocrText: ocrJson.text ?? '',
-        ocrConfidence: ocrJson.confidence,
+        ocrText: merged.text ?? '',
+        ocrConfidence: merged.confidence,
         riskScore: risk.score,
         riskLevel: risk.level,
         riskReasons: risk.reasons,
@@ -189,7 +266,6 @@ export function NewCaseClient() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
       if (!saveRes.ok) {
         const saveJson = await saveRes.json();
         throw new Error(saveJson.error ?? '케이스 저장에 실패했습니다.');
@@ -205,7 +281,7 @@ export function NewCaseClient() {
 
   return (
     <div className="space-y-6">
-      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
+      <Card className="space-y-4 border-[#E9E1D3] bg-white p-6 shadow-sm">
         <h1 className="text-xl font-semibold tracking-tight text-neutral-900">AI 리스크 분석</h1>
 
         <select
@@ -218,56 +294,115 @@ export function NewCaseClient() {
           ))}
         </select>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])}
-        />
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && onFileChange(e.target.files[0])}
-        />
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-neutral-900">1. 전신 이미지</p>
+          <input
+            ref={mainFileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && onMainFileChange(e.target.files[0])}
+          />
+          <input
+            ref={mainCameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && onMainFileChange(e.target.files[0])}
+          />
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            variant="outline"
-            type="button"
-            className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            파일 선택
-          </Button>
-          <Button
-            type="button"
-            className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
-            onClick={() => cameraInputRef.current?.click()}
-          >
-            카메라 촬영
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              type="button"
+              className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
+              onClick={() => mainFileInputRef.current?.click()}
+            >
+              파일 선택
+            </Button>
+            <Button
+              type="button"
+              className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
+              onClick={() => mainCameraInputRef.current?.click()}
+            >
+              카메라 촬영
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-neutral-900">2. 명문 근접 이미지 (선택, 최대 3장)</p>
+          <input
+            ref={detailFileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => onDetailFilesChange(e.target.files)}
+          />
+          <input
+            ref={detailCameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            multiple
+            className="hidden"
+            onChange={(e) => onDetailFilesChange(e.target.files)}
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              type="button"
+              className="h-[52px] rounded-xl border-[#E2D8C4] bg-white"
+              onClick={() => detailFileInputRef.current?.click()}
+            >
+              근접컷 파일 추가
+            </Button>
+            <Button
+              type="button"
+              className="h-[52px] rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]"
+              onClick={() => detailCameraInputRef.current?.click()}
+            >
+              근접컷 촬영
+            </Button>
+          </div>
         </div>
 
         <div className="rounded-2xl border border-dashed border-[#D8C8AA] bg-[#FCFAF6] p-4">
-          {!preview && (
+          {!mainPreview && (
             <div className="flex aspect-[4/3] w-full items-center justify-center rounded-xl border border-[#EEE5D8] bg-white text-sm text-neutral-500">
-              촬영 또는 파일 선택 후 미리보기가 표시됩니다.
+              전신 이미지를 먼저 등록해주세요.
             </div>
           )}
-          {preview && (
+          {mainPreview && (
             <div className="overflow-hidden rounded-xl border border-[#E9E1D3] bg-white">
-              <Image src={preview} alt="업로드 미리보기" width={1200} height={900} className="h-auto w-full" unoptimized />
+              <Image src={mainPreview} alt="전신 이미지 미리보기" width={1200} height={900} className="h-auto w-full" unoptimized />
             </div>
           )}
         </div>
+
+        {detailPreviews.length > 0 && (
+          <div className="grid grid-cols-3 gap-2">
+            {detailPreviews.map((src, idx) => (
+              <div key={`${src}-${idx}`} className="relative overflow-hidden rounded-xl border border-[#E9E1D3] bg-white">
+                <Image src={src} alt={`명문 근접 ${idx + 1}`} width={360} height={360} className="h-24 w-full object-cover" unoptimized />
+                <button
+                  type="button"
+                  onClick={() => removeDetailShot(idx)}
+                  className="absolute right-1 top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs text-white"
+                >
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       {quality && (
-        <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <Card className="space-y-3 border-[#E9E1D3] bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
             <h2 className="font-medium text-neutral-900">촬영 품질 체크</h2>
             <Badge>{quality.status}</Badge>
@@ -286,17 +421,17 @@ export function NewCaseClient() {
       <div className="space-y-2">
         <Button
           className="h-[56px] w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]"
-          onClick={onRunOCR}
-          disabled={!uploadFile || !quality || loading}
+          onClick={onRunAnalysis}
+          disabled={!mainUploadFile || !quality || loading}
         >
           {loading ? '분석 중...' : 'AI 리스크 분석 시작'}
         </Button>
-        <p className="text-center text-sm text-neutral-600">촬영 이미지 기반으로 작품 리스크를 자동 분석합니다.</p>
+        <p className="text-center text-sm text-neutral-600">전신/근접 이미지 기반으로 작품 리스크를 자동 분석합니다.</p>
       </div>
 
       {ocrText && (
-        <Card className="space-y-2 border-[#E9E1D3] bg-white p-5 shadow-sm">
-          <h2 className="font-medium text-neutral-900">OCR 미리보기</h2>
+        <Card className="space-y-2 border-[#E9E1D3] bg-white p-6 shadow-sm">
+          <h2 className="font-medium text-neutral-900">OCR 통합 미리보기</h2>
           <p className="whitespace-pre-wrap text-sm text-neutral-700">{ocrText}</p>
           {ocrConfidence !== undefined && <p className="text-xs text-neutral-500">평균 신뢰도 {(ocrConfidence * 100).toFixed(1)}%</p>}
           <p className="text-xs text-neutral-500">블록 수 {blocks.length}</p>
