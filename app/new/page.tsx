@@ -4,6 +4,6 @@ import { NewCaseClient } from '@/app/new/new-case-client';
 
 export default async function NewPage() {
   const session = await auth();
-  if (!session?.user?.id) redirect('/login');
+  if (!session?.user?.id) redirect('/');
   return <NewCaseClient />;
 }

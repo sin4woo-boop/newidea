@@ -2,22 +2,39 @@
 
 Heritage Risk Intelligence Platform for galleries.
 
-HERITAI는 갤러리/경매사 운영 관점에서 작품 리스크를 빠르게 스크리닝하는 데모용 B2B SaaS 프로토타입입니다.
-
-## 핵심 기능
+## 주요 기능
 
 - Google OAuth 로그인/로그아웃
-- 사용자별 데이터 분리 (각 사용자 본인 케이스만 조회)
-- 작품 이미지 업로드 + OCR + 리스크 점수 계산
-- 대시보드 KPI, 리스크 분포, 최근 케이스
+- 사용자별 케이스 분리 저장 및 조회
+- 이미지 업로드 + OCR + 리스크 점수 계산
+- 대시보드 KPI / 리스크 분포 / 최근 케이스
 - PWA manifest + service worker
 
 ## 기술 스택
 
-- Next.js App Router + TypeScript + TailwindCSS
-- Auth.js / NextAuth v5(beta)
+- Next.js App Router + TypeScript + Tailwind CSS
+- Auth.js (NextAuth v5 beta)
 - Prisma + PostgreSQL (Supabase 권장)
 - Google Vision OCR
+
+## 라우트 구조
+
+- `/` : 공개 랜딩 (비로그인 소개 + 로그인 CTA)
+- `/dashboard` : 로그인 필수 대시보드
+- `/new` : 로그인 필수 신규 분석
+- `/cases` : 로그인 필수 내 접수함
+
+라우팅 규칙:
+- 로그인 사용자가 `/`에 접근하면 `/dashboard`로 리다이렉트
+- 비로그인 사용자가 `/dashboard`, `/new`, `/cases`에 접근하면 `/`로 리다이렉트
+
+## 로그인/로그아웃 콜백 흐름
+
+- 로그인 버튼(헤더/랜딩 CTA): `signIn('google', { redirectTo: '/dashboard' })`
+- 로그아웃 버튼(헤더 계정 메뉴): `signOut({ redirectTo: '/' })`
+
+참고:
+- Auth.js v5 서버 액션에서는 `callbackUrl` 대신 `redirectTo`를 사용합니다.
 
 ## 로컬 실행
 
@@ -29,9 +46,7 @@ npm run dev
 
 브라우저에서 `http://localhost:3000` 접속.
 
-## 환경변수 (.env.local)
-
-아래 값을 설정하세요.
+## 환경 변수 (`.env.local`)
 
 ```env
 AUTH_SECRET=replace-with-32-plus-random-chars
@@ -43,60 +58,8 @@ GOOGLE_APPLICATION_CREDENTIALS_JSON={...service_account_json...}
 # 또는
 # GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/service-account.json
 
-# 선택: Supabase Storage 사용 시
+# 선택: Supabase Storage 업로드 사용 시
 # SUPABASE_URL=https://xxxx.supabase.co
 # SUPABASE_SERVICE_ROLE_KEY=xxxx
 # SUPABASE_STORAGE_BUCKET=uploads
 ```
-
-### AUTH_SECRET 생성
-
-- `npx auth secret`
-- 또는 `openssl rand -base64 32`
-
-## Google OAuth 설정
-
-Google Cloud Console에서 OAuth Client를 만들고 아래 Redirect URI를 등록하세요.
-
-- 로컬: `http://localhost:3000/api/auth/callback/google`
-- Vercel: `https://<your-project>.vercel.app/api/auth/callback/google`
-
-등록 후 발급된 값을 `.env.local`의 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`에 입력합니다.
-
-## 데이터 모델 (데모 계정 구조)
-
-- 현재는 `user` 단위 분리만 적용되어 있습니다.
-- 조직/갤러리 멀티테넌시는 다음 단계입니다.
-
-분리 원칙:
-
-- 케이스 생성 시 현재 로그인 유저 `userId`를 저장
-- 케이스 목록/상세는 현재 로그인 유저 데이터만 조회
-- `/admin`, `/cases`, `/case/[id]`, `/new`는 로그인 필수
-
-## Vercel 배포 시 참고
-
-- 필수 환경변수:
-  - `AUTH_SECRET`
-  - `GOOGLE_CLIENT_ID`
-  - `GOOGLE_CLIENT_SECRET`
-  - `DATABASE_URL` (Supabase Postgres 연결 문자열)
-  - `GOOGLE_APPLICATION_CREDENTIALS_JSON`
-- 비밀값은 절대 Git에 커밋하지 마세요.
-- `AUTH_SECRET`, `GOOGLE_CLIENT_SECRET`는 Vercel Environment Variables로만 관리하세요.
-- 첫 배포 전 또는 스키마 변경 후 DB 반영:
-  - 로컬에서 `npx prisma db push` 실행
-
-## HERITAI 브랜딩 규칙
-
-- 로고 표기: `HERIT` + `AI` (골드 강조)
-- 기본 컬러:
-  - Background: `#F7F4EE`
-  - Accent Gold: `#B89A5D` (hover: `#A88442`)
-  - Text: `neutral-900 / neutral-500`
-  - Card: white + thin border
-
-## 면책
-
-본 결과는 참고용 리스크 추정이며, 진위 판정/감정 결과가 아닙니다.  
-최종 감정은 전문가 검토가 필요합니다.

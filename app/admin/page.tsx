@@ -4,6 +4,6 @@ import { AdminClient } from '@/app/admin/admin-client';
 
 export default async function AdminPage() {
   const session = await auth();
-  if (!session?.user?.id) redirect('/login');
+  if (!session?.user?.id) redirect('/');
   return <AdminClient />;
 }

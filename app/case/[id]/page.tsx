@@ -8,7 +8,7 @@ import { getCaseByUser } from '@/lib/storage';
 
 export default async function CaseDetailPage({ params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session?.user?.id) redirect('/login');
+  if (!session?.user?.id) redirect('/');
 
   const data = await getCaseByUser(params.id, session.user.id);
   if (!data) return notFound();
@@ -45,9 +45,7 @@ export default async function CaseDetailPage({ params }: { params: { id: string 
       <Card className="space-y-2 border-[#E9E1D3] bg-white">
         <p className="korean-keep text-xs text-muted-foreground">{DISCLAIMER}</p>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer">
-          <Button className="h-12 w-full rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]">
-            서울옥션 위탁 상담 연결
-          </Button>
+          <Button className="h-12 w-full rounded-xl bg-[#B89A5D] text-white hover:bg-[#A88442]">서울옥션 위탁 상담 연결</Button>
         </a>
       </Card>
 

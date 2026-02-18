@@ -6,16 +6,14 @@ import { listCasesByUser } from '@/lib/storage';
 
 export default async function CasesPage() {
   const session = await auth();
-  if (!session?.user?.id) redirect('/login');
+  if (!session?.user?.id) redirect('/');
 
   const items = await listCasesByUser(session.user.id);
 
   return (
     <div className="space-y-3">
       <h1 className="text-lg font-semibold text-neutral-900">내 접수함</h1>
-      {items.length === 0 && (
-        <Card className="border-[#E9E1D3] text-sm text-neutral-500">아직 접수된 케이스가 없습니다.</Card>
-      )}
+      {items.length === 0 && <Card className="border-[#E9E1D3] text-sm text-neutral-500">아직 접수된 케이스가 없습니다.</Card>}
       {items.map((item) => (
         <Link href={`/case/${item.id}`} key={item.id}>
           <Card className="space-y-1 border-[#E9E1D3] bg-white">
