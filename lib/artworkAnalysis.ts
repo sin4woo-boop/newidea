@@ -1,4 +1,5 @@
 import sharp from 'sharp';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 type AnalyzeInput = {
   category: string;
@@ -24,7 +25,7 @@ function getGeminiConfig() {
   if (!apiKey) {
     throw new Error('Gemini API key missing. Set GEMINI_API_KEY in environment variables.');
   }
-  const model = process.env.GEMINI_OCR_MODEL || 'gemini-2.5-flash-lite';
+  const model = process.env.GEMINI_OCR_MODEL || 'gemini-3-flash';
   return { apiKey, model };
 }
 
@@ -66,15 +67,13 @@ function toStringList(raw: unknown, max = 3) {
     .slice(0, max);
 }
 
-export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<AnalyzeOutput> {
-  const { apiKey, model } = getGeminiConfig();
-  if (input.shots.length === 0) throw new Error('No images provided for analysis.');
-
-  const systemPrompt = [
+function buildPrompt(category: string) {
+  return [
     "너는 갤러리용 '작품 리스크 인텔리전스' 분석기다.",
     '반드시 한국어로만 답하고 영어를 절대 쓰지 마라.',
     '장황하게 쓰지 말고, 아래 JSON 형식으로만 출력하라.',
     '추정/가정은 (추정)으로 표시하라.',
+    `카테고리 힌트: ${category}`,
     '',
     '[출력 JSON 스키마]',
     '{',
@@ -93,46 +92,39 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
     '- key_features, risk_reasons, recommended_shots는 각각 최대 3개',
     '- JSON 외 텍스트 출력 금지'
   ].join('\n');
+}
 
-  const parts: any[] = [
-    { text: systemPrompt },
-    { text: `카테고리 힌트: ${input.category}` }
-  ];
+export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<AnalyzeOutput> {
+  if (input.shots.length === 0) throw new Error('No images provided for analysis.');
+
+  const { apiKey, model } = getGeminiConfig();
+  const client = new GoogleGenerativeAI(apiKey);
+  const geminiModel = client.getGenerativeModel({ model });
+
+  const contentParts: Array<
+    | string
+    | {
+        inlineData: {
+          data: string;
+          mimeType: string;
+        };
+      }
+  > = [buildPrompt(input.category)];
 
   for (const shot of input.shots) {
     const mimeType = await detectMimeType(shot.buffer);
-    parts.push({ text: `이미지 슬롯: ${shot.slot}` });
-    parts.push({
-      inline_data: {
-        mime_type: mimeType,
-        data: shot.buffer.toString('base64')
+    contentParts.push(`이미지 슬롯: ${shot.slot}`);
+    contentParts.push({
+      inlineData: {
+        data: shot.buffer.toString('base64'),
+        mimeType
       }
     });
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json'
-      }
-    })
-  });
-
-  const raw = await res.text();
-  if (!res.ok) throw new Error(`Gemini analysis failed: ${res.status} ${raw.slice(0, 180)}`);
-
-  const json = JSON.parse(raw);
-  const modelText =
-    json.candidates?.[0]?.content?.parts
-      ?.map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
-      .join('\n')
-      .trim() ?? '';
-  const parsed = JSON.parse(stripCodeFence(modelText));
+  const result = await geminiModel.generateContent(contentParts);
+  const rawText = result.response.text();
+  const parsed = JSON.parse(stripCodeFence(rawText));
 
   return {
     estimated_title: String(parsed.estimated_title ?? parsed.titleGuess ?? '작품명 미상(추정)'),
