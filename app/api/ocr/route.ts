@@ -17,8 +17,7 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const imageBase64 = buffer.toString('base64');
-    const result = await runVisionOCR(imageBase64);
+    const result = await runVisionOCR(buffer);
     return NextResponse.json(result);
   } catch (error) {
     console.error('/api/ocr error', error);

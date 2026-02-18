@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { readFileSync } from 'fs';
+import sharp from 'sharp';
 import { OCRBlock } from './types';
 
 type ServiceAccount = {
@@ -7,6 +8,16 @@ type ServiceAccount = {
   private_key: string;
   token_uri?: string;
 };
+
+type VisionSymbol = { text?: string };
+type VisionWord = { symbols?: VisionSymbol[]; confidence?: number };
+type VisionParagraph = { words?: VisionWord[] };
+type VisionBlock = {
+  paragraphs?: VisionParagraph[];
+  confidence?: number;
+  boundingBox?: { vertices?: { x?: number; y?: number }[] };
+};
+type VisionPage = { blocks?: VisionBlock[] };
 
 function toBase64Url(input: string) {
   return Buffer.from(input).toString('base64url');
@@ -21,6 +32,17 @@ function loadCredentials(): ServiceAccount | null {
     return JSON.parse(raw) as ServiceAccount;
   }
   return null;
+}
+
+function getLanguageHints() {
+  const fromEnv = process.env.OCR_LANGUAGE_HINTS?.split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return fromEnv && fromEnv.length > 0 ? fromEnv : ['ko', 'zh-Hant', 'ja'];
+}
+
+async function preprocessImage(input: Buffer) {
+  return sharp(input).rotate().resize({ width: 2000, withoutEnlargement: true }).grayscale().normalize().sharpen().toBuffer();
 }
 
 async function getAccessToken(creds: ServiceAccount) {
@@ -50,19 +72,21 @@ async function getAccessToken(creds: ServiceAccount) {
     })
   });
 
-  if (!tokenRes.ok) {
-    throw new Error(`Google OAuth failed: ${tokenRes.status}`);
-  }
+  if (!tokenRes.ok) throw new Error(`Google OAuth failed: ${tokenRes.status}`);
   const tokenJson = (await tokenRes.json()) as { access_token: string };
   return tokenJson.access_token;
 }
 
-export async function runVisionOCR(imageBase64: string): Promise<{ text: string; confidence?: number; blocks: OCRBlock[] }> {
+export async function runVisionOCR(imageBuffer: Buffer): Promise<{ text: string; confidence?: number; blocks: OCRBlock[] }> {
   const creds = loadCredentials();
   if (!creds) {
     throw new Error('Google credentials missing. Set GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS.');
   }
+
+  const processed = await preprocessImage(imageBuffer);
+  const imageBase64 = processed.toString('base64');
   const accessToken = await getAccessToken(creds);
+  const languageHints = getLanguageHints();
 
   const res = await fetch('https://vision.googleapis.com/v1/images:annotate', {
     method: 'POST',
@@ -74,32 +98,45 @@ export async function runVisionOCR(imageBase64: string): Promise<{ text: string;
       requests: [
         {
           image: { content: imageBase64 },
-          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          imageContext: { languageHints }
         }
       ]
     })
   });
 
-  if (!res.ok) {
-    throw new Error(`Vision API failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`Vision API failed: ${res.status}`);
 
   const json = await res.json();
-  const annotation = json.responses?.[0]?.fullTextAnnotation;
-  const text = annotation?.text ?? '';
+  const pages: VisionPage[] = json.responses?.[0]?.fullTextAnnotation?.pages ?? [];
 
-  const blocks: OCRBlock[] = (annotation?.pages?.[0]?.blocks ?? []).map((block: any) => ({
-    text: (block.paragraphs ?? [])
-      .flatMap((p: any) => p.words ?? [])
-      .map((w: any) => (w.symbols ?? []).map((s: any) => s.text).join(''))
-      .join(' '),
-    confidence: block.confidence,
-    boundingBox: block.boundingBox?.vertices?.map((v: any) => ({ x: v.x ?? 0, y: v.y ?? 0 }))
-  }));
+  const blocks: OCRBlock[] = pages.flatMap((page) =>
+    (page.blocks ?? []).map((block) => ({
+      text: (block.paragraphs ?? [])
+        .map((paragraph) =>
+          (paragraph.words ?? [])
+            .map((word) => (word.symbols ?? []).map((symbol) => symbol.text ?? '').join(''))
+            .join(' ')
+        )
+        .join('\n')
+        .trim(),
+      confidence: block.confidence,
+      boundingBox: block.boundingBox?.vertices?.map((v) => ({ x: v.x ?? 0, y: v.y ?? 0 }))
+    }))
+  );
 
-  const confidence = blocks.length
-    ? blocks.reduce((sum, b) => sum + (b.confidence ?? 0), 0) / blocks.length
-    : undefined;
+  const words: VisionWord[] = pages.flatMap((page) =>
+    (page.blocks ?? []).flatMap((block) => (block.paragraphs ?? []).flatMap((paragraph) => paragraph.words ?? []))
+  );
+
+  const text = words
+    .map((word) => (word.symbols ?? []).map((symbol) => symbol.text ?? '').join(''))
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  const confidences = words.map((word) => word.confidence).filter((value): value is number => typeof value === 'number');
+  const confidence = confidences.length ? confidences.reduce((sum, v) => sum + v, 0) / confidences.length : undefined;
 
   return { text, confidence, blocks };
 }
