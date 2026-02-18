@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { Badge, Card } from '@/components/ui';
 import { listCasesByUser } from '@/lib/storage';
-import { CaseDeleteButton } from '@/app/cases/case-delete-button';
+import { CasesToast } from '@/app/cases/cases-toast';
 
 function badgeTone(level: string) {
   if (level === '높음') return 'bg-[#E5C9C7] text-[#6F2F2B]';
@@ -20,6 +20,7 @@ export default async function CasesPage() {
 
   return (
     <div className="space-y-6 pb-8">
+      <CasesToast />
       <h1 className="text-xl font-semibold tracking-tight text-neutral-900">내 접수함</h1>
 
       {items.length === 0 && (
@@ -29,10 +30,6 @@ export default async function CasesPage() {
       <div className="space-y-4">
         {items.map((item) => (
           <Card key={item.id} className="border-[#E9E1D3] bg-white p-4 shadow-sm transition hover:shadow-md">
-            <div className="mb-2 flex justify-end">
-              <CaseDeleteButton caseId={item.id} />
-            </div>
-
             <Link href={`/case/${item.id}`} className="block">
               <div className="flex items-center gap-3">
                 <div className="relative h-14 w-14 flex-none overflow-hidden rounded-lg border border-[#E9E1D3] bg-[#F3EEE4]">

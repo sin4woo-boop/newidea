@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Badge, Button, Card } from '@/components/ui';
 import { CaseRecord } from '@/lib/types';
 import { DISCLAIMER } from '@/lib/disclaimer';
@@ -38,8 +39,11 @@ function extractExtraImages(tags: string[]) {
 }
 
 export function CaseReportClient({ data }: { data: CaseRecord }) {
+  const router = useRouter();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const extraImages = useMemo(() => extractExtraImages(data.tags), [data.tags]);
 
   const aiConfidencePct =
@@ -59,6 +63,21 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
     await navigator.clipboard.writeText(data.ocrText || '');
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
+  }
+
+  async function onDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/cases/${data.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        alert('삭제에 실패했습니다.');
+        return;
+      }
+      router.push('/cases?deleted=1');
+    } finally {
+      setDeleting(false);
+      setConfirmDeleteOpen(false);
+    }
   }
 
   return (
@@ -153,7 +172,8 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
         </div>
       </Card>
 
-      <div className="space-y-3">
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">작업</h2>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer" className="block">
           <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">
             전문 감정사 검토 요청
@@ -164,7 +184,45 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
             내 접수함으로 이동
           </Button>
         </Link>
-      </div>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-12 w-full rounded-2xl border-red-200 bg-white text-red-600 hover:bg-red-50"
+          onClick={() => setConfirmDeleteOpen(true)}
+        >
+          기록 삭제
+        </Button>
+      </Card>
+
+      {confirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30 p-4" onClick={() => setConfirmDeleteOpen(false)}>
+          <div
+            className="mx-auto mt-[24vh] w-full max-w-sm rounded-2xl border border-[#E9E1D3] bg-white p-5 shadow-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-neutral-900">이 분석 기록을 삭제할까요?</h3>
+            <p className="mt-2 text-sm text-neutral-600">삭제하면 복구할 수 없습니다.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                className="h-11 rounded-xl bg-red-600 text-white hover:bg-red-700"
+                onClick={onDelete}
+                disabled={deleting}
+              >
+                {deleting ? '삭제 중...' : '삭제'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 rounded-xl border-[#E2D8C4] bg-white"
+                onClick={() => setConfirmDeleteOpen(false)}
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedImage && (
         <div className="fixed inset-0 z-50 bg-black/70 p-4" onClick={() => setSelectedImage(null)}>
