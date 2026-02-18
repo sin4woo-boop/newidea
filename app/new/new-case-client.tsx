@@ -14,18 +14,14 @@ const targetMaxFileBytes = 1024 * 1024;
 const jpegQuality = 0.75;
 
 type AnalysisPayload = {
-  titleGuess?: string;
-  summary?: string;
-  visualEvidence?: string[];
-  ocrEvidence?: string[];
-  consistencyEvidence?: string[];
-  coverageInsight?: string;
-  ocrText?: string;
-  aiConfidence?: number;
-  riskScore?: number;
-  riskLevel?: '낮음' | '중간' | '높음';
-  riskReasons?: string[];
-  dataPoints?: number;
+  estimated_title?: string;
+  category_guess?: '서화' | '회화' | '도자' | '공예' | '기타';
+  one_line_summary?: string;
+  key_features?: string[];
+  risk_score?: number;
+  risk_level?: '낮음' | '중간' | '높음';
+  risk_reasons?: string[];
+  recommended_shots?: string[];
 };
 
 type ShotSlot = {
@@ -216,9 +212,6 @@ export function NewCaseClient() {
   const [category, setCategory] = useState<Category>('도자');
   const [shots, setShots] = useState<Record<string, LocalShot | null>>({});
   const [quality, setQuality] = useState<QualityResult | null>(null);
-  const [ocrText, setOcrText] = useState('');
-  const [ocrConfidence, setOcrConfidence] = useState<number | undefined>();
-  const [blocks, setBlocks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [compressionNotice, setCompressionNotice] = useState('');
@@ -286,30 +279,26 @@ export function NewCaseClient() {
         .filter((v): v is { slot: string; file: File } => Boolean(v.file));
       const analysis = await runArtworkAnalysis(category, analysisShots);
 
-      setOcrText(analysis.ocrText ?? '');
-      setOcrConfidence(typeof analysis.aiConfidence === 'number' ? analysis.aiConfidence : undefined);
-      setBlocks((analysis.ocrEvidence ?? []).map((line) => ({ text: line })));
-
       const payload = {
         id: createCaseId(),
         createdAt: new Date().toISOString(),
         category,
         imageUrl: mainUploadJson.imageUrl,
         qualityResult: quality,
-        ocrText: analysis.ocrText ?? '',
-        ocrConfidence: typeof analysis.aiConfidence === 'number' ? analysis.aiConfidence : undefined,
-        riskScore: Number.isFinite(analysis.riskScore) ? Math.max(0, Math.min(100, Math.round(analysis.riskScore ?? 0))) : 50,
-        riskLevel: (analysis.riskLevel ?? '중간') as '낮음' | '중간' | '높음',
-        riskReasons: (analysis.riskReasons ?? ['AI 분석 근거가 제한적입니다.']).slice(0, 4),
+        ocrText: '',
+        ocrConfidence: undefined,
+        riskScore: Number.isFinite(analysis.risk_score) ? Math.max(0, Math.min(100, Math.round(analysis.risk_score ?? 0))) : 50,
+        riskLevel: (analysis.risk_level ?? '중간') as '낮음' | '중간' | '높음',
+        riskReasons: (analysis.risk_reasons ?? ['AI 분석 근거가 제한적입니다.']).slice(0, 3),
         notes: JSON.stringify({
-          titleGuess: analysis.titleGuess ?? '',
-          summary: analysis.summary ?? '',
-          visualEvidence: analysis.visualEvidence ?? [],
-          ocrEvidence: analysis.ocrEvidence ?? [],
-          consistencyEvidence: analysis.consistencyEvidence ?? [],
-          coverageInsight: analysis.coverageInsight ?? '',
-          aiConfidence: analysis.aiConfidence ?? undefined,
-          dataPoints: analysis.dataPoints ?? undefined
+          estimated_title: analysis.estimated_title ?? '',
+          category_guess: analysis.category_guess ?? category,
+          one_line_summary: analysis.one_line_summary ?? '',
+          key_features: analysis.key_features ?? [],
+          risk_score: analysis.risk_score ?? undefined,
+          risk_level: analysis.risk_level ?? undefined,
+          risk_reasons: analysis.risk_reasons ?? [],
+          recommended_shots: analysis.recommended_shots ?? []
         }),
         tags: detailImageTags
       };
@@ -345,9 +334,6 @@ export function NewCaseClient() {
             setCategory(next);
             setShots({});
             setQuality(null);
-            setOcrText('');
-            setOcrConfidence(undefined);
-            setBlocks([]);
           }}
         >
           {['도자', '서화', '회화', '기타'].map((item) => (
@@ -447,15 +433,6 @@ export function NewCaseClient() {
         </Button>
         <p className="text-center text-sm text-neutral-600">카테고리별 촬영 컷을 기반으로 리스크를 자동 분석합니다.</p>
       </div>
-
-      {ocrText && (
-        <Card className="space-y-2 border-[#E9E1D3] bg-white p-6 shadow-sm">
-          <h2 className="font-medium text-neutral-900">분석 추출 텍스트</h2>
-          <p className="whitespace-pre-wrap text-sm text-neutral-700">{ocrText}</p>
-          {ocrConfidence !== undefined && <p className="text-xs text-neutral-500">AI 신뢰도 {(ocrConfidence * 100).toFixed(1)}%</p>}
-          <p className="text-xs text-neutral-500">근거 포인트 {blocks.length}</p>
-        </Card>
-      )}
     </div>
   );
 }

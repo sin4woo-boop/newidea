@@ -8,21 +8,24 @@ import { Badge, Button, Card } from '@/components/ui';
 import { CaseRecord } from '@/lib/types';
 import { DISCLAIMER } from '@/lib/disclaimer';
 
+type ReportNotes = {
+  estimated_title?: string;
+  category_guess?: '서화' | '회화' | '도자' | '공예' | '기타';
+  one_line_summary?: string;
+  key_features?: string[];
+  risk_score?: number;
+  risk_level?: '낮음' | '중간' | '높음';
+  risk_reasons?: string[];
+  recommended_shots?: string[];
+  titleGuess?: string;
+  summary?: string;
+  visualEvidence?: string[];
+};
+
 function riskTone(score: number) {
   if (score >= 70) return 'bg-[#E9D6D5] text-[#7D3F3B]';
   if (score >= 40) return 'bg-[#F3E8CF] text-[#8A6A33]';
   return 'bg-[#DDE8DF] text-[#486653]';
-}
-
-function coverageLabel(data: CaseRecord, extraImageCount: number) {
-  const score =
-    (data.imageUrl ? 1 : 0) +
-    Math.min(extraImageCount, 2) +
-    (data.ocrText.trim().length >= 12 ? 1 : 0) +
-    ((data.ocrConfidence ?? 0) >= 0.55 ? 1 : 0);
-  if (score >= 4) return { level: '충분', text: '촬영 커버리지가 충분하며 분석 근거가 안정적입니다.' };
-  if (score >= 2) return { level: '보통', text: '기본 커버리지는 확보되었으나 근접 명문 컷 보강이 유효합니다.' };
-  return { level: '보완 필요', text: '데이터 포인트가 부족해 리스크 추정 신뢰도가 낮을 수 있습니다.' };
 }
 
 function extractExtraImages(tags: string[]) {
@@ -38,91 +41,30 @@ function extractExtraImages(tags: string[]) {
     .filter(Boolean);
 }
 
-function parseNotes(notes?: string) {
+function parseNotes(notes?: string): ReportNotes | null {
   if (!notes) return null;
   try {
-    return JSON.parse(notes) as {
-      titleGuess?: string;
-      summary?: string;
-      visualEvidence?: string[];
-      ocrEvidence?: string[];
-      consistencyEvidence?: string[];
-      coverageInsight?: string;
-      aiConfidence?: number;
-      dataPoints?: number;
-    };
+    return JSON.parse(notes) as ReportNotes;
   } catch {
     return null;
   }
 }
 
-function firstMatchedSentence(input: string, patterns: RegExp[]) {
-  const lines = input
-    .split(/[\n.!?]/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  for (const line of lines) {
-    if (patterns.some((pattern) => pattern.test(line))) return line;
-  }
-  return '';
-}
-
-function inferGenre(category: CaseRecord['category'], titleGuess?: string) {
-  const title = titleGuess ?? '';
-  if (/(도자|청자|백자|분청|자기)/i.test(title)) return '도자';
-  if (/(서화|서예|문인화|수묵|글씨)/i.test(title)) return '서화';
-  if (/(회화|유화|채색화|풍경화|인물화)/i.test(title)) return '회화';
-  if (category === '기타') return '기타';
-  return category;
-}
-
 export function CaseReportClient({ data }: { data: CaseRecord }) {
   const router = useRouter();
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const extraImages = useMemo(() => extractExtraImages(data.tags), [data.tags]);
   const notes = useMemo(() => parseNotes(data.notes), [data.notes]);
 
-  const aiConfidencePct =
-    notes?.aiConfidence !== undefined
-      ? Math.round(notes.aiConfidence * 100)
-      : data.ocrConfidence !== undefined
-      ? Math.round(((data.ocrConfidence + Math.min(1, data.ocrText.length / 40)) / 2) * 100)
-      : undefined;
-  const dataPoints = notes?.dataPoints ?? 1 + extraImages.length + (data.ocrText.trim() ? 1 : 0) + (data.riskReasons.length || 0);
-
-  const visualEvidence =
-    notes?.visualEvidence && notes.visualEvidence.length > 0
-      ? notes.visualEvidence
-      : [
-          data.qualityResult.isBlurry
-            ? '초점 흔들림 요소가 확인되어 세부 판독 신뢰도에 제약이 있습니다.'
-            : '초점과 해상도가 기준을 충족해 시각적 판독 조건이 양호합니다.'
-        ];
-  const ocrEvidence =
-    notes?.ocrEvidence && notes.ocrEvidence.length > 0
-      ? notes.ocrEvidence
-      : [data.ocrText.trim().length >= 12 ? 'OCR 텍스트가 확보되었습니다.' : 'OCR 텍스트가 제한적입니다.'];
-  const consistencyEvidence =
-    notes?.consistencyEvidence && notes.consistencyEvidence.length > 0
-      ? notes.consistencyEvidence
-      : [data.riskScore >= 70 ? '고위험 신호가 관측됩니다.' : '중간 이하 위험 신호가 우세합니다.'];
-  const coverage = { level: coverageLabel(data, extraImages.length).level, text: notes?.coverageInsight || coverageLabel(data, extraImages.length).text };
-
-  const genreGuess = inferGenre(data.category, notes?.titleGuess);
-  const styleEraGuess =
-    firstMatchedSentence(notes?.summary ?? '', [/시대/, /양식/, /스타일/, /조선/, /근대/, /현대/]) ||
-    '스타일/시대는 이미지 기반 추정이며 추가 문헌 대조가 필요합니다.';
-  const featureSummary = [...visualEvidence, ...consistencyEvidence].slice(0, 3);
-  const interpretationSummary = notes?.summary || '이미지 기반으로 작품 특징, 일관성, 위험 신호를 종합 해석했습니다.';
-
-  async function copyOCR() {
-    await navigator.clipboard.writeText(data.ocrText || '');
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }
+  const estimatedTitle = notes?.estimated_title || notes?.titleGuess || '작품명 미상(추정)';
+  const oneLineSummary = notes?.one_line_summary || notes?.summary || '이미지 기반 작품 분석 결과입니다.';
+  const keyFeatures = (notes?.key_features?.length ? notes.key_features : notes?.visualEvidence ?? []).slice(0, 3);
+  const riskScore = Number.isFinite(notes?.risk_score) ? Math.max(0, Math.min(100, Math.round(Number(notes?.risk_score)))) : data.riskScore;
+  const riskLevel = (notes?.risk_level ?? data.riskLevel) as '낮음' | '중간' | '높음';
+  const riskReasons = (notes?.risk_reasons?.length ? notes.risk_reasons : data.riskReasons).slice(0, 3);
+  const recommendedShots = (notes?.recommended_shots ?? []).slice(0, 3);
 
   async function onDelete() {
     setDeleting(true);
@@ -142,9 +84,9 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
   return (
     <div className="space-y-8 pb-4">
       <header className="space-y-2">
-        <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">AI Artwork Intelligence Report</p>
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{notes?.titleGuess || `${data.category} 작품 분석 리포트`}</h1>
-        <p className="text-sm text-neutral-600">기술 OCR 중심이 아닌 작품 해석 중심의 구조화 리포트입니다.</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-neutral-500">Artwork Intelligence</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{estimatedTitle}</h1>
+        <p className="text-sm text-neutral-600">(추정)</p>
       </header>
 
       <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
@@ -175,21 +117,12 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
       </Card>
 
       <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">작품 정체성 요약</h2>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">장르 추정</p>
-            <p className="mt-2 text-sm font-medium text-neutral-900">{genreGuess}</p>
-          </div>
-          <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">스타일/시대 추정</p>
-            <p className="mt-2 text-sm text-neutral-800">{styleEraGuess}</p>
-          </div>
-        </div>
+        <h2 className="text-lg font-semibold text-neutral-900">한 줄 요약</h2>
+        <p className="text-sm leading-relaxed text-neutral-800">{oneLineSummary}</p>
         <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-          <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">주요 특징 3줄 요약</p>
+          <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">핵심 특징</p>
           <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-            {featureSummary.map((line) => (
+            {keyFeatures.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
@@ -197,89 +130,44 @@ export function CaseReportClient({ data }: { data: CaseRecord }) {
       </Card>
 
       <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">AI 작품 해석</h2>
-        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-          <p className="mb-2 text-sm leading-relaxed text-neutral-800">{interpretationSummary}</p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-            {visualEvidence.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-          <p className="mb-1 text-xs uppercase tracking-[0.14em] text-neutral-500">일관성 검토</p>
-          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-            {consistencyEvidence.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      </Card>
-
-      <Card className="space-y-5 border-[#E9E1D3] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-neutral-900">리스크 판단</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Score</p>
-            <p className="mt-1 text-5xl font-bold tabular-nums tracking-tight text-neutral-900">{data.riskScore}</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">점수</p>
+            <p className="mt-1 text-5xl font-bold tabular-nums tracking-tight text-neutral-900">{riskScore}</p>
           </div>
           <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Risk Level</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">레벨</p>
             <div className="mt-3">
-              <Badge className={`rounded-full px-3 py-1 text-sm ${riskTone(data.riskScore)}`}>{data.riskLevel}</Badge>
+              <Badge className={`rounded-full px-3 py-1 text-sm ${riskTone(riskScore)}`}>{riskLevel}</Badge>
             </div>
-          </div>
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">AI Confidence</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{aiConfidencePct !== undefined ? `${aiConfidencePct}%` : 'N/A'}</p>
-          </div>
-          <div className="rounded-2xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-            <p className="text-xs uppercase tracking-[0.14em] text-neutral-500">Data Points</p>
-            <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">{dataPoints}</p>
           </div>
         </div>
         <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-          {data.riskReasons.map((line) => (
+          {riskReasons.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
+      </Card>
+
+      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-neutral-900">추가 촬영 권장</h2>
+        {recommendedShots.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
+            {recommendedShots.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-neutral-700">현재 촬영본으로 1차 분석은 가능합니다. 필요 시 명문/저부 근접 컷을 추가하세요.</p>
+        )}
         <p className="korean-keep border-t border-[#EEE5D8] pt-3 text-xs text-neutral-500">{DISCLAIMER}</p>
       </Card>
 
       <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">추가 확인 권장</h2>
-        <div className="flex items-center gap-2">
-          <Badge className="bg-[#EFE8DA] text-neutral-700">{coverage.level}</Badge>
-          <p className="text-sm text-neutral-700">{coverage.text}</p>
-        </div>
-        <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-          {data.riskReasons.slice(0, 3).map((reason) => (
-            <li key={reason}>{reason}</li>
-          ))}
-        </ul>
-      </Card>
-
-      <Card className="space-y-4 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-neutral-900">OCR 참고 정보 (보조)</h2>
-          <Button type="button" variant="outline" className="h-9 rounded-lg border-[#E2D8C4] px-3 text-xs" onClick={copyOCR}>
-            {copied ? '복사됨' : 'OCR 복사'}
-          </Button>
-        </div>
-        <div className="rounded-xl border border-[#EEE5D8] bg-[#FCFAF6] p-4">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-neutral-700">
-            {ocrEvidence.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <p className="mt-2 break-keep whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">{data.ocrText || '인식된 텍스트가 없습니다.'}</p>
-        </div>
-      </Card>
-
-      <Card className="space-y-3 border-[#E9E1D3] bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-neutral-900">작업</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">전문 검토</h2>
         <a href="https://www.seoulauction.com" target="_blank" rel="noreferrer" className="block">
-          <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">전문 감정원 검토 요청</Button>
+          <Button className="h-14 w-full rounded-2xl bg-[#B89A5D] text-base font-semibold text-white hover:bg-[#A88442]">전문 감정사 검토 요청</Button>
         </a>
         <Link href="/cases" className="block">
           <Button variant="outline" className="h-12 w-full rounded-2xl border-[#E2D8C4] bg-white">

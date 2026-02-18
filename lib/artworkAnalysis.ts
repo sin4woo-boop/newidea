@@ -5,19 +5,18 @@ type AnalyzeInput = {
   shots: Array<{ slot: string; buffer: Buffer }>;
 };
 
+type CategoryGuess = '서화' | '회화' | '도자' | '공예' | '기타';
+type RiskLevel = '낮음' | '중간' | '높음';
+
 type AnalyzeOutput = {
-  titleGuess: string;
-  summary: string;
-  visualEvidence: string[];
-  ocrEvidence: string[];
-  consistencyEvidence: string[];
-  coverageInsight: string;
-  ocrText: string;
-  aiConfidence: number;
-  riskScore: number;
-  riskLevel: '낮음' | '중간' | '높음';
-  riskReasons: string[];
-  dataPoints: number;
+  estimated_title: string;
+  category_guess: CategoryGuess;
+  one_line_summary: string;
+  key_features: string[];
+  risk_score: number;
+  risk_level: RiskLevel;
+  risk_reasons: string[];
+  recommended_shots: string[];
 };
 
 function getGeminiConfig() {
@@ -44,47 +43,65 @@ async function detectMimeType(buffer: Buffer) {
   }
 }
 
-function parseLevel(raw: string): '낮음' | '중간' | '높음' {
-  if (raw === '높음' || raw === '중간' || raw === '낮음') return raw;
-  if (raw.toLowerCase().includes('high')) return '높음';
-  if (raw.toLowerCase().includes('medium')) return '중간';
+function toCategoryGuess(raw: unknown, fallback: string): CategoryGuess {
+  const value = String(raw ?? '').trim();
+  if (value === '서화' || value === '회화' || value === '도자' || value === '공예' || value === '기타') return value;
+  if (fallback === '서화' || fallback === '회화' || fallback === '도자' || fallback === '공예') return fallback;
+  return '기타';
+}
+
+function toRiskLevel(raw: unknown): RiskLevel {
+  const value = String(raw ?? '').trim();
+  if (value === '낮음' || value === '중간' || value === '높음') return value;
+  if (value.toLowerCase().includes('high')) return '높음';
+  if (value.toLowerCase().includes('medium')) return '중간';
   return '낮음';
+}
+
+function toStringList(raw: unknown, max = 3) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .slice(0, max);
 }
 
 export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<AnalyzeOutput> {
   const { apiKey, model } = getGeminiConfig();
   if (input.shots.length === 0) throw new Error('No images provided for analysis.');
 
-  const prompt = [
-    'You are an art-risk analyst for a gallery SaaS.',
-    'Analyze all provided images of the same artwork.',
-    `Category hint: ${input.category}`,
-    'Return STRICT JSON only with keys:',
+  const systemPrompt = [
+    "너는 갤러리용 '작품 리스크 인텔리전스' 분석기다.",
+    '반드시 한국어로만 답하고 영어를 절대 쓰지 마라.',
+    '장황하게 쓰지 말고, 아래 JSON 형식으로만 출력하라.',
+    '추정/가정은 (추정)으로 표시하라.',
+    '',
+    '[출력 JSON 스키마]',
     '{',
-    '  "titleGuess": string,',
-    '  "summary": string,',
-    '  "visualEvidence": string[],',
-    '  "ocrEvidence": string[],',
-    '  "consistencyEvidence": string[],',
-    '  "coverageInsight": string,',
-    '  "ocrText": string,',
-    '  "aiConfidence": number (0..1),',
-    '  "riskScore": number (0..100),',
-    '  "riskLevel": "낮음" | "중간" | "높음",',
-    '  "riskReasons": string[],',
-    '  "dataPoints": number',
+    '  "estimated_title": "작품 제목 또는 작품명(추정)",',
+    '  "category_guess": "서화|회화|도자|공예|기타",',
+    '  "one_line_summary": "한 줄 요약",',
+    '  "key_features": ["핵심 특징1","특징2","특징3"],',
+    '  "risk_score": 0,',
+    '  "risk_level": "낮음|중간|높음",',
+    '  "risk_reasons": ["근거1","근거2","근거3"],',
+    '  "recommended_shots": ["추가 촬영 권장1","권장2"]',
     '}',
-    'Rules:',
-    '- Be concise and evidence-based.',
-    '- ocrText should focus on inscription text if available.',
-    '- If inscription unreadable, set ocrText to empty string.',
-    '- visualEvidence/ocrEvidence/consistencyEvidence each 2-4 bullets.'
+    '',
+    '[규칙]',
+    '- risk_score는 0~100 정수',
+    '- key_features, risk_reasons, recommended_shots는 각각 최대 3개',
+    '- JSON 외 텍스트 출력 금지'
   ].join('\n');
 
-  const parts: any[] = [{ text: prompt }];
+  const parts: any[] = [
+    { text: systemPrompt },
+    { text: `카테고리 힌트: ${input.category}` }
+  ];
+
   for (const shot of input.shots) {
     const mimeType = await detectMimeType(shot.buffer);
-    parts.push({ text: `Image slot: ${shot.slot}` });
+    parts.push({ text: `이미지 슬롯: ${shot.slot}` });
     parts.push({
       inline_data: {
         mime_type: mimeType,
@@ -118,17 +135,17 @@ export async function analyzeArtworkWithGemini(input: AnalyzeInput): Promise<Ana
   const parsed = JSON.parse(stripCodeFence(modelText));
 
   return {
-    titleGuess: String(parsed.titleGuess ?? '작품 정보'),
-    summary: String(parsed.summary ?? ''),
-    visualEvidence: Array.isArray(parsed.visualEvidence) ? parsed.visualEvidence.map(String) : [],
-    ocrEvidence: Array.isArray(parsed.ocrEvidence) ? parsed.ocrEvidence.map(String) : [],
-    consistencyEvidence: Array.isArray(parsed.consistencyEvidence) ? parsed.consistencyEvidence.map(String) : [],
-    coverageInsight: String(parsed.coverageInsight ?? ''),
-    ocrText: String(parsed.ocrText ?? ''),
-    aiConfidence: Number.isFinite(parsed.aiConfidence) ? Math.max(0, Math.min(1, Number(parsed.aiConfidence))) : 0.5,
-    riskScore: Number.isFinite(parsed.riskScore) ? Math.max(0, Math.min(100, Math.round(Number(parsed.riskScore)))) : 50,
-    riskLevel: parseLevel(String(parsed.riskLevel ?? '중간')),
-    riskReasons: Array.isArray(parsed.riskReasons) ? parsed.riskReasons.map(String).slice(0, 4) : [],
-    dataPoints: Number.isFinite(parsed.dataPoints) ? Math.max(1, Math.round(Number(parsed.dataPoints))) : input.shots.length
+    estimated_title: String(parsed.estimated_title ?? parsed.titleGuess ?? '작품명 미상(추정)'),
+    category_guess: toCategoryGuess(parsed.category_guess, input.category),
+    one_line_summary: String(parsed.one_line_summary ?? parsed.summary ?? ''),
+    key_features: toStringList(parsed.key_features ?? parsed.visualEvidence, 3),
+    risk_score: Number.isFinite(parsed.risk_score)
+      ? Math.max(0, Math.min(100, Math.round(Number(parsed.risk_score))))
+      : Number.isFinite(parsed.riskScore)
+      ? Math.max(0, Math.min(100, Math.round(Number(parsed.riskScore))))
+      : 50,
+    risk_level: toRiskLevel(parsed.risk_level ?? parsed.riskLevel),
+    risk_reasons: toStringList(parsed.risk_reasons ?? parsed.riskReasons, 3),
+    recommended_shots: toStringList(parsed.recommended_shots, 3)
   };
 }
