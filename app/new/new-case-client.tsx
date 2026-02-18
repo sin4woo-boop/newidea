@@ -139,18 +139,31 @@ async function runOCR(file: File) {
 }
 
 function mergeOCRResults(results: OCRPayload[]) {
-  const lines = results
+  const hanjaRegex = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g;
+  const sourceLines = results
     .flatMap((item) => (item.text ?? '').split(/\n+/))
     .map((line) => line.trim())
     .filter(Boolean);
+
+  const filtered = sourceLines
+    .map((line) => {
+      const compact = line.replace(/\s+/g, '');
+      const hanjaCount = compact.match(hanjaRegex)?.length ?? 0;
+      const allowedOnly = compact.replace(/[^\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g, '');
+      const ratio = hanjaCount / Math.max(compact.length, 1);
+      return { line: allowedOnly, hanjaCount, ratio };
+    })
+    .filter((item) => item.hanjaCount >= 2 && item.ratio >= 0.45 && item.line.length > 0)
+    .sort((a, b) => b.hanjaCount - a.hanjaCount || b.line.length - a.line.length);
+
   const uniqueLines: string[] = [];
-  for (const line of lines) {
-    if (!uniqueLines.some((saved) => saved === line || saved.includes(line) || line.includes(saved))) {
-      uniqueLines.push(line);
+  for (const item of filtered) {
+    if (!uniqueLines.some((saved) => saved === item.line || saved.includes(item.line) || item.line.includes(saved))) {
+      uniqueLines.push(item.line);
     }
   }
 
-  const text = uniqueLines.join('\n').trim();
+  const text = (uniqueLines.length ? uniqueLines : sourceLines.slice(0, 3)).join('\n').trim();
   const confValues = results
     .map((item) => item.confidence)
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
